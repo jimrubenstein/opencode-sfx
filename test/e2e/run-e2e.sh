@@ -272,16 +272,21 @@ test_sfx_test_command() {
   clear_log
   
   # Send the /sfx test command (needs double Enter in OpenCode)
+  # This triggers the AI to call the sfx_test_sound tool
   send_message "/sfx test"
   
-  # Wait for sound to be logged
-  if wait_for_log "test.*user requested" 15; then
+  # Wait for sound to be logged - the tool logs with event=test
+  # Give extra time since AI needs to process the command (can be slow)
+  if wait_for_log "event=test" 45; then
     log_pass "/sfx test command logged sound"
     return 0
   else
+    # Check what's in the pane for debugging
     log_fail "/sfx test command did not log sound"
+    echo "  Tmux pane (last 5 lines):"
+    tmux capture-pane -t "$SESSION_NAME" -p 2>/dev/null | tail -5 | sed 's/^/    /' || true
     echo "  Log contents:"
-    get_recent_log 5 | sed 's/^/    /'
+    get_recent_log 10 | sed 's/^/    /'
     return 1
   fi
 }
@@ -357,10 +362,11 @@ main() {
   test_startup_sound || true
   test_theme_in_log || true
   
-  # These tests require interaction and may be flaky
-  # test_sfx_list_command || true
-  # test_sfx_test_command || true
-  # test_idle_sound_on_completion || true
+  # Interactive tests - these send commands to OpenCode
+  test_idle_sound_on_completion || true
+  
+  # The /sfx test command requires AI processing which can be slow/flaky
+  # Uncomment to test: test_sfx_test_command || true
   
   # Cleanup
   test_exit_cleanly || true
