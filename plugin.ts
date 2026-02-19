@@ -30,8 +30,7 @@ const TTY_PROFILES_FILE = join(STATE_DIR, "tty-profiles.json")
 // =============================================================================
 
 // Cached window info captured at startup
-let cachedWindowId: number | null = null
-let cachedWindowTitle: string | null = null
+let cachedWeztermPaneId: number | null = null
 let cachedTmuxWindowName: string | null = null
 let hasAlert = false
 
@@ -39,24 +38,10 @@ const ALERT_PREFIX = process.env.OCSFX_ALERT ?? "!! "
 
 // Capture our window info at startup (call this once during plugin init)
 function captureWindowInfo(): void {
-  // Capture WezTerm window info
+  // Capture WezTerm pane ID from environment
   if (process.env.WEZTERM_PANE !== undefined) {
-    try {
-      const paneInfo = execSync(`wezterm cli list --format json`, {
-        encoding: "utf-8",
-        timeout: 1000,
-      })
-      const panes = JSON.parse(paneInfo)
-      const ourPane = panes.find(
-        (p: any) => p.pane_id === parseInt(process.env.WEZTERM_PANE || "0")
-      )
-      if (ourPane) {
-        cachedWindowId = ourPane.window_id
-        cachedWindowTitle = ourPane.window_title
-      }
-    } catch {
-      // Ignore errors during capture
-    }
+    cachedWeztermPaneId = parseInt(process.env.WEZTERM_PANE, 10)
+    if (isNaN(cachedWeztermPaneId)) cachedWeztermPaneId = null
   }
 
   // Capture tmux window name
@@ -122,23 +107,24 @@ function clearTmuxAlert(): void {
 // Check if this specific pane/window is active
 // Returns true if user is looking at this instance, false if they should be notified
 function isPaneActive(): boolean {
-  // If we have WezTerm window info, use the multi-stage check
-  if (cachedWindowId !== null) {
-    // Stage 1: Is our WezTerm window the active window?
-    const ourWindowActive = isOurWezTermWindowActive()
-
-    if (!ourWindowActive) {
-      // Our window is not active - user is not looking at us
+  // If we have a WezTerm pane ID, use focused_pane_id from wezterm cli
+  if (cachedWeztermPaneId !== null) {
+    // Stage 1: Is WezTerm even the frontmost app?
+    if (!isWezTermFrontmost()) {
       return false
     }
 
-    // Stage 2: Our window IS active. Are we in tmux?
+    // Stage 2: Is our WezTerm pane the focused one?
+    if (!isOurWezTermPaneFocused()) {
+      return false
+    }
+
+    // Stage 3: If inside tmux, check if our tmux pane is active
     if (process.env.TMUX) {
-      // Stage 3: Check if our tmux pane is active
       return isTmuxPaneActive()
     }
 
-    // Not in tmux, and our window is active - user is looking at us
+    // Our WezTerm pane is focused and no tmux — user is looking at us
     return true
   }
 
@@ -151,45 +137,35 @@ function isPaneActive(): boolean {
   return isTerminalAppFocused()
 }
 
-// Check if our specific WezTerm window is the active/focused window
-function isOurWezTermWindowActive(): boolean {
+// Check if WezTerm is the frontmost application
+function isWezTermFrontmost(): boolean {
   try {
-    // First check if WezTerm is even the frontmost app
     const frontApp = execSync(
       `osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true'`,
       { encoding: "utf-8", timeout: 1000 }
     ).trim()
+    return frontApp.toLowerCase().includes("wezterm")
+  } catch {
+    return true // Assume frontmost on error
+  }
+}
 
-    if (!frontApp.toLowerCase().includes("wezterm")) {
-      return false // WezTerm not focused at all
-    }
-
-    // Get the focused WezTerm window title
-    const focusedTitle = execSync(
-      `osascript -e 'tell application "System Events" to tell process "wezterm-gui" to get name of front window'`,
-      { encoding: "utf-8", timeout: 1000 }
-    ).trim()
-
-    // Get current title for our cached window_id (title may have changed)
-    const paneInfo = execSync(`wezterm cli list --format json`, {
+// Check if our WezTerm pane is the focused pane via wezterm cli list-clients
+function isOurWezTermPaneFocused(): boolean {
+  try {
+    const clientInfo = execSync(`wezterm cli list-clients --format json`, {
       encoding: "utf-8",
       timeout: 1000,
     })
-    const panes = JSON.parse(paneInfo)
+    const clients = JSON.parse(clientInfo)
+    if (clients.length === 0) return true // No client info, assume focused
 
-    // Find panes in our window
-    const ourWindowPanes = panes.filter(
-      (p: any) => p.window_id === cachedWindowId
+    // Check if any client has our pane focused
+    return clients.some(
+      (c: any) => c.focused_pane_id === cachedWeztermPaneId
     )
-    if (ourWindowPanes.length === 0) return true // Can't find our window, assume active
-
-    // Our window's current title
-    const ourCurrentTitle = ourWindowPanes[0].window_title
-
-    // Is the focused window title the same as our window's title?
-    return focusedTitle === ourCurrentTitle
   } catch {
-    return true // Assume active on error
+    return true // Assume focused on error
   }
 }
 
