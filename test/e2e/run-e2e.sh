@@ -299,8 +299,8 @@ test_idle_sound_on_completion() {
   # Send a simple command that will complete quickly (double Enter for OpenCode)
   send_message "What is 2+2?"
   
-  # Wait for idle sound
-  if wait_for_log "session.idle" 20; then
+  # Wait for idle sound - give plenty of time for AI to process and respond
+  if wait_for_log "session.idle" 45; then
     log_pass "Idle sound logged on task completion"
     return 0
   else

@@ -131,8 +131,8 @@ description: Theme without sounds section
           name: "Test Theme",
           description: "Test description",
           sounds: {
-            announce: "announce.mp3",
-            question: "question.mp3",
+            announce: ["announce.mp3"],
+            question: ["question.mp3"],
             idle: ["idle1.mp3", "idle2.mp3"],
             error: ["error1.mp3"],
           },
@@ -173,12 +173,13 @@ description: Theme without sounds section
 
 describe("Theme Structure Validation", () => {
   it("should validate SoundTheme interface requirements", () => {
+    // All sound types are now arrays
     interface SoundTheme {
       name: string
       description: string
       sounds: {
-        announce: string
-        question: string
+        announce: string[]
+        question: string[]
         idle: string[]
         error: string[]
       }
@@ -188,16 +189,78 @@ describe("Theme Structure Validation", () => {
       name: "Valid Theme",
       description: "A valid theme",
       sounds: {
-        announce: "announce.mp3",
-        question: "question.mp3",
+        announce: ["announce.mp3"],
+        question: ["question.mp3"],
         idle: ["idle1.mp3"],
         error: ["error1.mp3"],
       },
     }
 
     expect(validTheme.name).toBeDefined()
-    expect(validTheme.sounds.announce).toBeDefined()
+    expect(Array.isArray(validTheme.sounds.announce)).toBe(true)
+    expect(Array.isArray(validTheme.sounds.question)).toBe(true)
     expect(Array.isArray(validTheme.sounds.idle)).toBe(true)
     expect(Array.isArray(validTheme.sounds.error)).toBe(true)
+  })
+})
+
+describe("Sound Value Normalization", () => {
+  // Replicate the normalizeToArray logic for testing
+  function normalizeToArray(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.filter((v): v is string => typeof v === "string")
+    }
+    if (typeof value === "string" && value.length > 0) {
+      return [value]
+    }
+    return []
+  }
+
+  it("should convert string to single-element array", () => {
+    expect(normalizeToArray("sound.mp3")).toEqual(["sound.mp3"])
+  })
+
+  it("should keep array as-is", () => {
+    expect(normalizeToArray(["a.mp3", "b.mp3"])).toEqual(["a.mp3", "b.mp3"])
+  })
+
+  it("should return empty array for undefined", () => {
+    expect(normalizeToArray(undefined)).toEqual([])
+  })
+
+  it("should return empty array for null", () => {
+    expect(normalizeToArray(null)).toEqual([])
+  })
+
+  it("should return empty array for empty string", () => {
+    expect(normalizeToArray("")).toEqual([])
+  })
+
+  it("should filter non-strings from array", () => {
+    expect(normalizeToArray(["a.mp3", 123, "b.mp3", null])).toEqual(["a.mp3", "b.mp3"])
+  })
+})
+
+describe("Random Sound Selection", () => {
+  function randomSound(sounds: string[]): string | null {
+    if (!sounds || sounds.length === 0) {
+      return null
+    }
+    return sounds[Math.floor(Math.random() * sounds.length)]
+  }
+
+  it("should return null for empty array", () => {
+    expect(randomSound([])).toBeNull()
+  })
+
+  it("should return the only element for single-element array", () => {
+    expect(randomSound(["only.mp3"])).toBe("only.mp3")
+  })
+
+  it("should return element from array for multi-element array", () => {
+    const sounds = ["a.mp3", "b.mp3", "c.mp3"]
+    for (let i = 0; i < 50; i++) {
+      expect(sounds).toContain(randomSound(sounds))
+    }
   })
 })

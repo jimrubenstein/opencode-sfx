@@ -531,7 +531,10 @@ function removeInstance(): void {
 // SOUND PLAYBACK HELPERS
 // =============================================================================
 
-function randomSound(sounds: string[]): string {
+function randomSound(sounds: string[]): string | null {
+  if (!sounds || sounds.length === 0) {
+    return null
+  }
   return sounds[Math.floor(Math.random() * sounds.length)]
 }
 
@@ -613,18 +616,24 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
     }
     
     // Play announcement sound
-    const announcePath = join(SOUNDS_DIR, currentTheme.sounds.announce)
-    if (existsSync(announcePath)) {
-      playSoundAlways(announcePath, "theme.switch", "theme changed")
+    const announceFile = randomSound(currentTheme.sounds.announce)
+    if (announceFile) {
+      const announcePath = join(SOUNDS_DIR, announceFile)
+      if (existsSync(announcePath)) {
+        playSoundAlways(announcePath, "theme.switch", "theme changed")
+      }
     }
     
     return { success: true, message: `Switched to ${currentTheme.name} (${currentTheme.description})` }
   }
 
   // Play the announcement sound on startup (always, regardless of focus)
-  const announcePath = join(SOUNDS_DIR, currentTheme.sounds.announce)
-  if (existsSync(announcePath)) {
-    playSoundAlways(announcePath, "startup", "plugin initialized")
+  const announceFile = randomSound(currentTheme.sounds.announce)
+  if (announceFile) {
+    const announcePath = join(SOUNDS_DIR, announceFile)
+    if (existsSync(announcePath)) {
+      playSoundAlways(announcePath, "startup", "plugin initialized")
+    }
   }
 
   // Cleanup on exit
@@ -691,8 +700,8 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             `Description: ${theme.description}`,
             "",
             "Sounds:",
-            `  Announce: ${theme.sounds.announce}`,
-            `  Question: ${theme.sounds.question}`,
+            `  Announce (${theme.sounds.announce.length}): ${theme.sounds.announce.join(", ")}`,
+            `  Question (${theme.sounds.question.length}): ${theme.sounds.question.join(", ")}`,
             `  Idle (${theme.sounds.idle.length}): ${theme.sounds.idle.join(", ")}`,
             `  Error (${theme.sounds.error.length}): ${theme.sounds.error.join(", ")}`,
           ]
@@ -747,10 +756,14 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           properties: {},
         },
         execute: async () => {
-          const soundPath = join(SOUNDS_DIR, currentTheme.sounds.announce)
+          const soundFile = randomSound(currentTheme.sounds.announce)
+          if (!soundFile) {
+            return `Error: No announce sounds configured for theme ${currentThemeKey}`
+          }
+          const soundPath = join(SOUNDS_DIR, soundFile)
           if (existsSync(soundPath)) {
             playSoundAlways(soundPath, "test", "user requested test")
-            return `Playing: ${currentTheme.sounds.announce} (theme: ${currentThemeKey})`
+            return `Playing: ${soundFile} (theme: ${currentThemeKey})`
           }
           return `Error: Sound file not found: ${soundPath}`
         },
@@ -989,8 +1002,8 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         }
         soundFile = randomSound(currentTheme.sounds.idle)
       } else if (eventType === "permission.asked") {
-        // Always play the same question sound for this theme
-        soundFile = currentTheme.sounds.question
+        // Play a random question sound for this theme
+        soundFile = randomSound(currentTheme.sounds.question)
       } else if (eventType === "session.error") {
         soundFile = randomSound(currentTheme.sounds.error)
       } else if (eventType === "tui.command.execute") {
@@ -1016,9 +1029,12 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       }
 
       if (input.tool === "mcp_question" || input.tool === "question") {
-        const soundPath = join(SOUNDS_DIR, currentTheme.sounds.question)
-        if (existsSync(soundPath)) {
-          playSound(soundPath, "tool.question", "question tool invoked")
+        const questionFile = randomSound(currentTheme.sounds.question)
+        if (questionFile) {
+          const soundPath = join(SOUNDS_DIR, questionFile)
+          if (existsSync(soundPath)) {
+            playSound(soundPath, "tool.question", "question tool invoked")
+          }
         }
       }
     },

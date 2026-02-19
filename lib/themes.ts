@@ -10,8 +10,8 @@ export interface SoundTheme {
   name: string
   description: string
   sounds: {
-    announce: string
-    question: string
+    announce: string[]
+    question: string[]
     idle: string[]
     error: string[]
   }
@@ -88,6 +88,21 @@ function saveCache(themes: ThemeMap): void {
 // YAML LOADING
 // =============================================================================
 
+/**
+ * Normalize a sound value to an array.
+ * Accepts: string, string[], or undefined/null
+ * Returns: string[] (empty array if no valid input)
+ */
+function normalizeToArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((v): v is string => typeof v === "string")
+  }
+  if (typeof value === "string" && value.length > 0) {
+    return [value]
+  }
+  return []
+}
+
 function loadThemeFromYaml(filePath: string): SoundTheme | null {
   try {
     const content = readFileSync(filePath, "utf-8")
@@ -103,10 +118,11 @@ function loadThemeFromYaml(filePath: string): SoundTheme | null {
       name: data.name,
       description: data.description || "",
       sounds: {
-        announce: data.sounds.announce || "",
-        question: data.sounds.question || "",
-        idle: data.sounds.idle || [],
-        error: data.sounds.error || [],
+        // Normalize all sound types to arrays (supports both string and array in YAML)
+        announce: normalizeToArray(data.sounds.announce),
+        question: normalizeToArray(data.sounds.question),
+        idle: normalizeToArray(data.sounds.idle),
+        error: normalizeToArray(data.sounds.error),
       },
     }
   } catch (err) {
