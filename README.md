@@ -14,14 +14,20 @@ Also features:
 
 ## Setup
 
-### 1. Install dependencies
+### Quick Install
 
 ```bash
-cd ~/work/opencode-sfx
-npm install
+git clone https://github.com/jimrubenstein/opencode-sfx.git
+cd opencode-sfx
+./install.sh
 ```
 
-### 2. Add sound files
+The installer will:
+1. Install npm dependencies
+2. Find your OpenCode config and add the plugin
+3. Optionally install the `/sfx` command globally
+
+### Sound Files
 
 Sound files are not included in this repository. You need to provide your own StarCraft sound files.
 
@@ -29,16 +35,22 @@ Place MP3 files in `~/sounds/starcraft/mp3_trimmed/` (or set `OCSFX_SOUNDS_PATH`
 
 The filenames should match those referenced in the `themes/*.yaml` files.
 
-### 3. Configure OpenCode
+### Manual Install
 
-Add the plugin to your OpenCode config (`~/.config/opencode/config.json`):
+If you prefer to configure manually, add the plugin to your OpenCode config (`~/.config/opencode/opencode.json`):
 
 ```json
 {
-  "plugins": [
-    "~/work/opencode-sfx/plugin.ts"
+  "plugin": [
+    "/path/to/opencode-sfx/plugin.ts"
   ]
 }
+```
+
+Then copy the `/sfx` command to your global commands directory:
+
+```bash
+cp /path/to/opencode-sfx/commands/sfx.md ~/.config/opencode/commands/
 ```
 
 ## Themes
