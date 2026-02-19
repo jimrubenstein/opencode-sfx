@@ -21,7 +21,9 @@ TEST_DIR="$SCRIPT_DIR"
 
 # Configuration
 SESSION_NAME="ocsfx-e2e-test"
+# Store logs in e2e dir but run from project root
 LOG_FILE="$TEST_DIR/ocsfx-test.log"
+STDOUT_LOG="$TEST_DIR/ocsfx-stdout.log"
 TIMEOUT_SECONDS=30
 KEEP_SESSION=false
 
@@ -92,7 +94,7 @@ cleanup() {
   if [[ "$KEEP_SESSION" == "false" ]]; then
     tmux kill-session -t "$SESSION_NAME" 2>/dev/null || true
   fi
-  rm -f "$LOG_FILE"
+  rm -f "$LOG_FILE" "$STDOUT_LOG"
 }
 
 # Setup test environment
@@ -110,23 +112,34 @@ setup() {
 # Start OpenCode in a tmux session with test mode enabled
 start_opencode_session() {
   log_info "Starting OpenCode in tmux session..."
+  log_info "Running from: $PROJECT_DIR"
+  
+  # Clean up any previous logs
+  rm -f "$STDOUT_LOG"
   
   # Create tmux session and start opencode with debug logging
-  tmux new-session -d -s "$SESSION_NAME" -c "$TEST_DIR" \
-    "export OCSFX_DEBUG=test; export OCSFX_LOG_FILE='$LOG_FILE'; export OC_SFX_SOUNDS_DIR='$PROJECT_DIR/test/sounds'; opencode"
+  # Run from the PROJECT_DIR where opencode.json has the plugin configured
+  # Force the "test" theme which uses the test sound filenames
+  tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR" \
+    "export OCSFX_DEBUG=test; export OCSFX_LOG_FILE='$LOG_FILE'; export OC_SFX_SOUNDS_DIR='$PROJECT_DIR/test/sounds'; export OCSFX_PROFILE=test; opencode 2>&1 | tee '$STDOUT_LOG'"
   
   # Wait for OpenCode to start and plugin to initialize
   local waited=0
   while [[ $waited -lt $TIMEOUT_SECONDS ]]; do
     if grep -q "startup" "$LOG_FILE" 2>/dev/null; then
-      log_info "OpenCode started (startup sound logged)"
+      log_info "OpenCode started (startup sound logged after ${waited}s)"
       return 0
     fi
     sleep 1
     ((waited++))
   done
   
-  log_warn "Timeout waiting for OpenCode startup (may still work)"
+  log_warn "Timeout waiting for OpenCode startup (${waited}s)"
+  # Show any stdout captured for debugging
+  if [[ -f "$STDOUT_LOG" ]] && [[ -s "$STDOUT_LOG" ]]; then
+    log_info "Last 10 lines of stdout:"
+    tail -10 "$STDOUT_LOG" 2>/dev/null | sed 's/^/  /' || true
+  fi
   return 0
 }
 
@@ -134,6 +147,17 @@ start_opencode_session() {
 send_keys() {
   tmux send-keys -t "$SESSION_NAME" "$1"
   sleep 0.5
+}
+
+# Send a message/command to OpenCode (needs double Enter to submit)
+send_message() {
+  local msg="$1"
+  tmux send-keys -t "$SESSION_NAME" "$msg"
+  sleep 0.2
+  tmux send-keys -t "$SESSION_NAME" Enter
+  sleep 0.2
+  tmux send-keys -t "$SESSION_NAME" Enter
+  sleep 1
 }
 
 # Send keys and wait for them to be processed
@@ -205,12 +229,14 @@ test_startup_sound() {
 test_theme_in_log() {
   log_info "Test: Theme name appears in log"
   
-  # Check that a theme name is logged (should be one of our known themes)
-  if grep -qE "theme=(marine|ghost|goliath|wraith|vulture|firebat|scv|dropship|battlecruiser|science-vessel|siege-tank|advisor|duke|raynor|kerrigan)" "$LOG_FILE"; then
-    log_pass "Theme name found in log"
+  # Check that the test theme is logged
+  if grep -q "theme=test" "$LOG_FILE"; then
+    log_pass "Test theme found in log"
     return 0
   else
-    log_fail "No valid theme name found in log"
+    log_fail "Test theme not found in log"
+    echo "  Log contents:"
+    get_recent_log 5 | sed 's/^/    /'
     return 1
   fi
 }
@@ -220,12 +246,11 @@ test_sfx_list_command() {
   
   clear_log
   
-  # Send the /sfx list command
-  send_keys "/sfx list"
-  send_keys "Enter"
+  # Send the /sfx list command (needs double Enter in OpenCode)
+  send_message "/sfx list"
   
   # Wait a bit for the command to be processed
-  sleep 3
+  sleep 5
   
   # The command itself doesn't play a sound, but we can check the session responded
   # by looking at tmux output
@@ -246,12 +271,11 @@ test_sfx_test_command() {
   
   clear_log
   
-  # Send the /sfx test command
-  send_keys "/sfx test"
-  send_keys "Enter"
+  # Send the /sfx test command (needs double Enter in OpenCode)
+  send_message "/sfx test"
   
   # Wait for sound to be logged
-  if wait_for_log "test.*user requested" 10; then
+  if wait_for_log "test.*user requested" 15; then
     log_pass "/sfx test command logged sound"
     return 0
   else
@@ -267,12 +291,11 @@ test_idle_sound_on_completion() {
   
   clear_log
   
-  # Send a simple command that will complete quickly
-  send_keys "What is 2+2?"
-  send_keys "Enter"
+  # Send a simple command that will complete quickly (double Enter for OpenCode)
+  send_message "What is 2+2?"
   
   # Wait for idle sound
-  if wait_for_log "session.idle" 15; then
+  if wait_for_log "session.idle" 20; then
     log_pass "Idle sound logged on task completion"
     return 0
   else

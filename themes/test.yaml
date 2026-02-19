@@ -1,0 +1,12 @@
+name: Test Theme
+description: Theme for automated testing with minimal sounds
+
+sounds:
+  announce: announce.mp3
+  question: question.mp3
+  idle:
+    - idle1.mp3
+    - idle2.mp3
+  error:
+    - error1.mp3
+    - error2.mp3

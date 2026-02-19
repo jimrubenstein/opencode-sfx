@@ -16,10 +16,6 @@ import { fileURLToPath } from "url"
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const PLAY_SOUND_SCRIPT = join(__dirname, "..", "bin", "play-sound")
 
-// Debug mode from environment
-const DEBUG_MODE = process.env.OCSFX_DEBUG
-const LOG_FILE = process.env.OCSFX_LOG_FILE
-
 export interface PlaySoundOptions {
   /** Why the sound is being played */
   reason?: string
@@ -39,19 +35,35 @@ export interface SoundPlayResult {
 }
 
 /**
+ * Get current debug mode from environment (read each time for flexibility)
+ */
+function getDebugMode(): string | undefined {
+  return process.env.OCSFX_DEBUG
+}
+
+/**
+ * Get current log file from environment (read each time for flexibility)
+ */
+function getLogFilePath(): string | undefined {
+  return process.env.OCSFX_LOG_FILE
+}
+
+/**
  * Log a message in debug/test mode
  */
 function logMessage(message: string): void {
+  const debugMode = getDebugMode()
+  const logFile = getLogFilePath()
   const timestamp = new Date().toISOString()
   const logLine = `[OCSFX] ${timestamp} ${message}`
 
-  if (DEBUG_MODE === "1" || DEBUG_MODE === "test") {
+  if (debugMode === "1" || debugMode === "test") {
     console.error(logLine)
   }
 
-  if (LOG_FILE) {
+  if (logFile) {
     try {
-      appendFileSync(LOG_FILE, logLine + "\n")
+      appendFileSync(logFile, logLine + "\n")
     } catch {
       // Ignore log file errors
     }
@@ -66,6 +78,8 @@ function logMessage(message: string): void {
  * @returns Result indicating if sound was played/logged
  */
 export function playSound(soundPath: string, options: PlaySoundOptions = {}): SoundPlayResult {
+  const debugMode = getDebugMode()
+  const logFile = getLogFilePath()
   const { reason, theme, event } = options
   const basename = soundPath.split("/").pop() || soundPath
 
@@ -83,20 +97,20 @@ export function playSound(soundPath: string, options: PlaySoundOptions = {}): So
   if (reason) logParts.push(`reason=${reason}`)
 
   // Test mode - log but don't play
-  if (DEBUG_MODE === "test") {
+  if (debugMode === "test") {
     logMessage(`TEST_MODE ${logParts.join(" ")}`)
     return { played: false, logged: true, testMode: true }
   }
 
   // Debug mode - log and play
-  if (DEBUG_MODE === "1" || LOG_FILE) {
+  if (debugMode === "1" || logFile) {
     logMessage(logParts.join(" "))
   }
 
   // Check if play-sound script exists
   if (!existsSync(PLAY_SOUND_SCRIPT)) {
     // Fallback to direct playback if script not found
-    return playDirect(soundPath, options)
+    return playDirect(soundPath, debugMode, logFile)
   }
 
   // Build command arguments
@@ -114,12 +128,12 @@ export function playSound(soundPath: string, options: PlaySoundOptions = {}): So
       env: {
         ...process.env,
         // Pass through debug settings
-        OCSFX_DEBUG: DEBUG_MODE || "",
-        OCSFX_LOG_FILE: LOG_FILE || "",
+        OCSFX_DEBUG: debugMode || "",
+        OCSFX_LOG_FILE: logFile || "",
       },
     })
     child.unref()
-    return { played: true, logged: DEBUG_MODE !== undefined || LOG_FILE !== undefined, testMode: false }
+    return { played: true, logged: debugMode !== undefined || logFile !== undefined, testMode: false }
   } catch (err) {
     const error = `Failed to spawn play-sound: ${err}`
     logMessage(`ERROR ${error}`)
@@ -130,7 +144,7 @@ export function playSound(soundPath: string, options: PlaySoundOptions = {}): So
 /**
  * Fallback direct playback (used if play-sound script not found)
  */
-function playDirect(soundPath: string, options: PlaySoundOptions): SoundPlayResult {
+function playDirect(soundPath: string, debugMode: string | undefined, logFile: string | undefined): SoundPlayResult {
   const platform = process.platform
 
   let command: string
@@ -162,7 +176,7 @@ function playDirect(soundPath: string, options: PlaySoundOptions): SoundPlayResu
       stdio: "ignore",
     })
     child.unref()
-    return { played: true, logged: DEBUG_MODE !== undefined || LOG_FILE !== undefined, testMode: false }
+    return { played: true, logged: debugMode !== undefined || logFile !== undefined, testMode: false }
   } catch (err) {
     const error = `Failed to play sound: ${err}`
     logMessage(`ERROR ${error}`)
@@ -174,19 +188,20 @@ function playDirect(soundPath: string, options: PlaySoundOptions): SoundPlayResu
  * Check if we're in test mode (sounds logged but not played)
  */
 export function isTestMode(): boolean {
-  return DEBUG_MODE === "test"
+  return getDebugMode() === "test"
 }
 
 /**
  * Check if debug logging is enabled
  */
 export function isDebugMode(): boolean {
-  return DEBUG_MODE === "1" || DEBUG_MODE === "test"
+  const mode = getDebugMode()
+  return mode === "1" || mode === "test"
 }
 
 /**
  * Get the log file path if configured
  */
 export function getLogFile(): string | undefined {
-  return LOG_FILE
+  return getLogFilePath()
 }
