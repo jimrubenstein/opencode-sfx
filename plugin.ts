@@ -2,8 +2,9 @@ import type { Plugin } from "@opencode-ai/plugin"
 import { homedir } from "os"
 import { join } from "path"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs"
-import { spawn, execSync } from "child_process"
+import { execSync } from "child_process"
 import { loadThemes, getThemeNames, getTheme, reloadThemes, type SoundTheme } from "./lib/themes.js"
+import { playSound as playSoundLib, isDebugMode, isTestMode } from "./lib/sound-player.js"
 
 // =============================================================================
 // CONFIGURATION
@@ -241,26 +242,32 @@ function isTerminalAppFocused(): boolean {
   }
 }
 
+// Current theme info for logging (set during plugin init)
+let currentThemeForLogging: string = ""
+
 // Fire-and-forget sound playback (non-blocking)
 // Only plays if this pane is NOT active, also sets tmux alert
-function playSound(soundPath: string): void {
+function playSound(soundPath: string, event?: string, reason?: string): void {
   if (isPaneActive()) {
     return // Don't play sound if this pane is active
   }
   // Set tmux alert when playing sound
   setTmuxAlert()
-  spawn("afplay", [soundPath], {
-    detached: true,
-    stdio: "ignore",
-  }).unref()
+  playSoundLib(soundPath, {
+    theme: currentThemeForLogging,
+    event,
+    reason,
+  })
 }
 
 // Always play sound regardless of focus
-function playSoundAlways(soundPath: string): void {
-  spawn("afplay", [soundPath], {
-    detached: true,
-    stdio: "ignore",
-  }).unref()
+function playSoundAlways(soundPath: string, event?: string, reason?: string): void {
+  playSoundLib(soundPath, {
+    theme: currentThemeForLogging,
+    event,
+    reason,
+    force: true,
+  })
 }
 
 // =============================================================================
@@ -554,6 +561,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
   const { theme: initialTheme, source } = assignThemeToInstance()
   let currentThemeKey = initialTheme
   let currentTheme = themes[currentThemeKey]
+  currentThemeForLogging = currentThemeKey
 
   if (!currentTheme) {
     await client.app.log({
@@ -596,6 +604,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
     }
     currentThemeKey = newThemeKey
     currentTheme = newTheme
+    currentThemeForLogging = newThemeKey
     
     // Update TTY profile for persistence
     const tty = getTtyIdentifier()
@@ -606,7 +615,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
     // Play announcement sound
     const announcePath = join(SOUNDS_DIR, currentTheme.sounds.announce)
     if (existsSync(announcePath)) {
-      playSoundAlways(announcePath)
+      playSoundAlways(announcePath, "theme.switch", "theme changed")
     }
     
     return { success: true, message: `Switched to ${currentTheme.name} (${currentTheme.description})` }
@@ -615,7 +624,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
   // Play the announcement sound on startup (always, regardless of focus)
   const announcePath = join(SOUNDS_DIR, currentTheme.sounds.announce)
   if (existsSync(announcePath)) {
-    playSoundAlways(announcePath)
+    playSoundAlways(announcePath, "startup", "plugin initialized")
   }
 
   // Cleanup on exit
@@ -740,7 +749,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         execute: async () => {
           const soundPath = join(SOUNDS_DIR, currentTheme.sounds.announce)
           if (existsSync(soundPath)) {
-            playSoundAlways(soundPath)
+            playSoundAlways(soundPath, "test", "user requested test")
             return `Playing: ${currentTheme.sounds.announce} (theme: ${currentThemeKey})`
           }
           return `Error: Sound file not found: ${soundPath}`
@@ -936,7 +945,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             return `Error: Sound file not found: ${soundPath}`
           }
           
-          playSoundAlways(soundPath)
+          playSoundAlways(soundPath, "preview", "user requested preview")
           return `Playing: ${filename}`
         },
       },
@@ -995,7 +1004,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       if (soundFile) {
         const soundPath = join(SOUNDS_DIR, soundFile)
         if (existsSync(soundPath)) {
-          playSound(soundPath)
+          playSound(soundPath, eventType)
         }
       }
     },
@@ -1009,7 +1018,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       if (input.tool === "mcp_question" || input.tool === "question") {
         const soundPath = join(SOUNDS_DIR, currentTheme.sounds.question)
         if (existsSync(soundPath)) {
-          playSound(soundPath)
+          playSound(soundPath, "tool.question", "question tool invoked")
         }
       }
     },

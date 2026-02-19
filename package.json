@@ -7,7 +7,9 @@
   "scripts": {
     "build:themes": "node scripts/build-themes.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "bash test/e2e/run-e2e.sh",
+    "test:e2e:debug": "bash test/e2e/run-e2e.sh --keep-session"
   },
   "dependencies": {
     "yaml": "^2.7.0"

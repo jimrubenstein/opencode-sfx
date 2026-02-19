@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# Cross-platform sound player with debug/test mode support
+#
+# Usage: play-sound [options] <sound-file>
+#
+# Options:
+#   --reason <reason>   Why the sound is being played (for logging)
+#   --theme <theme>     Current theme name (for logging)
+#   --event <event>     Event that triggered the sound (for logging)
+#
+# Environment:
+#   OCSFX_DEBUG=1       Enable debug logging (logs to stderr)
+#   OCSFX_DEBUG=test    Test mode - log but don't play sounds
+#   OCSFX_LOG_FILE      Write logs to this file (in addition to stderr if DEBUG=1)
+#
+# Exit codes:
+#   0 - Success (sound played or logged in test mode)
+#   1 - Missing sound file argument
+#   2 - Sound file not found
+#   3 - No audio player available
+#   4 - Audio player failed
+
+set -e
+
+# Parse arguments
+SOUND_FILE=""
+REASON=""
+THEME=""
+EVENT=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --reason)
+      REASON="$2"
+      shift 2
+      ;;
+    --theme)
+      THEME="$2"
+      shift 2
+      ;;
+    --event)
+      EVENT="$2"
+      shift 2
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      SOUND_FILE="$1"
+      shift
+      ;;
+  esac
+done
+
+# Validate arguments
+if [[ -z "$SOUND_FILE" ]]; then
+  echo "Usage: play-sound [--reason <reason>] [--theme <theme>] [--event <event>] <sound-file>" >&2
+  exit 1
+fi
+
+if [[ ! -f "$SOUND_FILE" ]]; then
+  echo "Sound file not found: $SOUND_FILE" >&2
+  exit 2
+fi
+
+# Build log message
+TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+BASENAME=$(basename "$SOUND_FILE")
+LOG_PARTS=("$TIMESTAMP" "PLAY" "$BASENAME")
+[[ -n "$THEME" ]] && LOG_PARTS+=("theme=$THEME")
+[[ -n "$EVENT" ]] && LOG_PARTS+=("event=$EVENT")
+[[ -n "$REASON" ]] && LOG_PARTS+=("reason=$REASON")
+LOG_MESSAGE="${LOG_PARTS[*]}"
+
+# Debug/test mode logging
+log_debug() {
+  if [[ "$OCSFX_DEBUG" == "1" || "$OCSFX_DEBUG" == "test" ]]; then
+    echo "[OCSFX] $LOG_MESSAGE" >&2
+  fi
+  if [[ -n "$OCSFX_LOG_FILE" ]]; then
+    echo "[OCSFX] $LOG_MESSAGE" >> "$OCSFX_LOG_FILE"
+  fi
+}
+
+# Test mode - log but don't play
+if [[ "$OCSFX_DEBUG" == "test" ]]; then
+  log_debug
+  echo "[OCSFX] TEST_MODE: Would play $BASENAME"
+  exit 0
+fi
+
+# Debug mode - log and play
+log_debug
+
+# Detect platform and play sound
+play_sound() {
+  local file="$1"
+  
+  case "$(uname -s)" in
+    Darwin)
+      # macOS - use afplay
+      if command -v afplay &>/dev/null; then
+        afplay "$file" &
+        disown
+        return 0
+      fi
+      ;;
+    Linux)
+      # Linux - try multiple players in order of preference
+      if command -v paplay &>/dev/null; then
+        # PulseAudio
+        paplay "$file" &
+        disown
+        return 0
+      elif command -v aplay &>/dev/null; then
+        # ALSA (wav only, but worth trying)
+        aplay -q "$file" 2>/dev/null &
+        disown
+        return 0
+      elif command -v mpv &>/dev/null; then
+        # mpv (common media player)
+        mpv --no-terminal --no-video "$file" &
+        disown
+        return 0
+      elif command -v ffplay &>/dev/null; then
+        # ffmpeg's player
+        ffplay -nodisp -autoexit -loglevel quiet "$file" &
+        disown
+        return 0
+      elif command -v play &>/dev/null; then
+        # SoX play command
+        play -q "$file" &
+        disown
+        return 0
+      fi
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      # Windows (Git Bash, MSYS2, Cygwin)
+      if command -v powershell.exe &>/dev/null; then
+        # Use PowerShell to play sound
+        powershell.exe -c "(New-Object Media.SoundPlayer '$file').PlaySync()" &
+        disown
+        return 0
+      fi
+      ;;
+    *)
+      ;;
+  esac
+  
+  return 1
+}
+
+if play_sound "$SOUND_FILE"; then
+  exit 0
+else
+  echo "No audio player available for $(uname -s)" >&2
+  exit 3
+fi
