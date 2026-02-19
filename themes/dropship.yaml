@@ -1,0 +1,15 @@
+name: Dropship
+description: Transport pilot
+
+sounds:
+  announce: 182244_in_the_pipe_five_by_five.mp3
+  question: 182242_input_coordinates.mp3
+  idle:
+    - 182244_in_the_pipe_five_by_five.mp3
+    - 182249_in_transit_hq.mp3
+    - 182251_buckle_up.mp3
+    - 182256_i_copy_that.mp3
+  error:
+    - 182246_hang_on_were_in_for_some_chop.mp3
+    - 182253_strap_yourselves_in_void.mp3
+    - 182223_when_removing_your_overhead_luggage_weighs_be_careful.mp3

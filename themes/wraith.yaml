@@ -1,0 +1,15 @@
+name: Wraith
+description: Terran starfighter
+
+sounds:
+  announce: 182450_wraith_awaiting_launch_orders.mp3
+  question: 182434_last_transmission_breaking_up_come_back.mp3
+  idle:
+    - 182461_coordinates_received.mp3
+    - 182467_roger.mp3
+    - 182470_vector_locked_in.mp3
+    - 182464_attack_formation.mp3
+  error:
+    - 182436_im_just_curious_why_im_so_good.mp3
+    - 182447_i_am_invincible_thats_right.mp3
+    - 182445_everybody_s_gotta_die_sometime_red.mp3

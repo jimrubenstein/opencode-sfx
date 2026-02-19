@@ -1,0 +1,16 @@
+name: Ghost
+description: Psionic operative
+
+sounds:
+  announce: 182373_ghost_reportin.mp3
+  question: 182380_call_the_shot.mp3
+  idle:
+    - 182387_never_know_what_hit_em.mp3
+    - 182389_im_all_over_it.mp3
+    - 182385_im_gone.mp3
+    - 182382_i_hear_that.mp3
+  error:
+    - 182364_you_call_down_the_thunder.mp3
+    - 182365_now_reap_the_whirlwind.mp3
+    - 182366_keep_it_up_i_dare_ya.mp3
+    - 182369_im_about_to_overload_my_aggression_inhibiters.mp3

@@ -1,0 +1,15 @@
+name: Battlecruiser
+description: Capital ship commander
+
+sounds:
+  announce: 182272_battle_cruiser_operational.mp3
+  question: 182277_receiving_transmission.mp3
+  idle:
+    - 182290_make_it_happen.mp3
+    - 182292_set_the_course.mp3
+    - 182296_engage.mp3
+    - 182294_take_it_slow.mp3
+  error:
+    - 182263_shields_up_weapons_online.mp3
+    - 182265_not_equipped_with_shields.mp3
+    - 182267_we_are_getting_way_behind_schedule.mp3

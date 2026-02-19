@@ -1,0 +1,16 @@
+name: Firebat
+description: Flame trooper
+
+sounds:
+  announce: 182331_need_a_light.mp3
+  question: 182339_you_got_my_attention.mp3
+  idle:
+    - 182344_naturally.mp3
+    - 182347_slamin.mp3
+    - 182349_you_got_it.mp3
+    - 182352_lets_burn.mp3
+  error:
+    - 182311_is_something_burning.mp3
+    - 182318_i_love_the_smell_of_napalm.mp3
+    - 182323_are_you_trying_to_get_invited_to_my_next_bbq.mp3
+    - 182326_got_any_questions_about_propane.mp3

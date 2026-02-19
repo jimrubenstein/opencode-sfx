@@ -1,0 +1,16 @@
+name: Science Vessel
+description: Research vessel
+
+sounds:
+  announce: 182584_explorer_reporting.mp3
+  question: 182591_transmit_orders.mp3
+  idle:
+    - 182606_excellent.mp3
+    - 182609_commencing.mp3
+    - 182614_affirmative_sir.mp3
+    - 182603_lets_roll.mp3
+  error:
+    - 182561_i_like_the_cut_of_your_jib.mp3
+    - 182565_emc_doh_let_me_get_my_notepad.mp3
+    - 182568_mm_fusion_eh_ill_have_to_remember_that.mp3
+    - 182575_i_think_we_may_have_a_gas_leak.mp3

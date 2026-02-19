@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build cache
+.cache/
+
+# Sound files (not included in repo - too large / copyright)
+sounds/
+*.mp3
+*.wav
+*.ogg
+
+# OS files
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# TypeScript build output
+dist/
+*.js
+*.js.map
+*.d.ts
+!lib/*.ts
+!plugin.ts
+
+# Lock files (optional - uncomment if you want to include)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml

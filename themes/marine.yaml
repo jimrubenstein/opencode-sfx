@@ -1,0 +1,16 @@
+name: Marine
+description: Terran infantry
+
+sounds:
+  announce: 182102_jacked_up_and_good_to_go.mp3
+  question: 182078_are_you_going_to_give_me_orders.mp3
+  idle:
+    - 182111_outstanding.mp3
+    - 182113_rock_n_roll.mp3
+    - 182102_jacked_up_and_good_to_go.mp3
+    - 182107_go_go_go.mp3
+    - 182109_lets_move.mp3
+  error:
+    - 182090_you_want_a_piece_of_me_boy.mp3
+    - 182086_how_do_i_get_out_of_this_chickenshit_outfit.mp3
+    - 182084_i_vote_we_frag_this_commander.mp3

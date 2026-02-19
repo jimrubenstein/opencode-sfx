@@ -1,0 +1,14 @@
+name: Siege Tank
+description: Arclite siege tank commander
+
+sounds:
+  announce: 182156_ready_to_roll_out.mp3
+  question: 182168_identify_target.mp3
+  idle:
+    - 182156_ready_to_roll_out.mp3
+    - 182177_delighted_to_sir.mp3
+    - 182179_absolutely.mp3
+    - 182175_proceeding.mp3
+  error:
+    - 182154_what_is_your_major_malfunction.mp3
+    - 182170_order_sir.mp3

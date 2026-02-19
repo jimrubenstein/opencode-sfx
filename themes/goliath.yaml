@@ -1,0 +1,14 @@
+name: Goliath
+description: Heavy assault walker
+
+sounds:
+  announce: 182049_goliath_online.mp3
+  question: 182052_go_ahead_taccom.mp3
+  idle:
+    - 182049_goliath_online.mp3
+    - 182059_systems_functional.mp3
+    - 182046_checklist_completed_sob.mp3
+    - 182066_confirm.mp3
+  error:
+    - 182069_target_designated.mp3
+    - 182039_running_level_one_diagnostic.mp3

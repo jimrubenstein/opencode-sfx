@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "../plugin.ts"
+  ],
+  "mcp": {},
+  "command": {
+    "sfx": {
+      "description": "Manage sound effect themes",
+      "template": "Help the user manage SFX sound themes. User arguments: $ARGUMENTS\n\nUse these tools based on the argument:\n- (no args) or 'list': sfx_list_themes - list all themes\n- 'view [name]': sfx_view_theme - view theme details\n- 'change <name>': sfx_change_theme - switch theme\n- 'reload': sfx_reload_themes - reload from YAML\n- 'test': sfx_test_sound - play announce sound\n- 'sounds [filter]': sfx_list_sounds - list sound files\n- 'play <file>': sfx_preview_sound - preview a sound\n- 'create': Start theme creation wizard.\n\nBe concise. Show results clearly."
+    }
+  }
+}

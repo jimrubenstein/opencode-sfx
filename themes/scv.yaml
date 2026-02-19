@@ -1,0 +1,17 @@
+name: SCV
+description: Space construction vehicle
+
+sounds:
+  announce: 182513_scv_good_to_go_sir.mp3
+  question: 182491_come_again.mp3
+  idle:
+    - 182519_jobs_finished.mp3
+    - 182535_affirmative.mp3
+    - 182540_roger_that.mp3
+    - 182543_right_away_sir.mp3
+    - 182546_orders_received.mp3
+  error:
+    - 182501_i_cant_believe_it_put_me_in_one_of_these_things.mp3
+    - 182504_and_now_i_gotta_put_up_with_this_too.mp3
+    - 182507_ive_gotta_get_outta_here.mp3
+    - 182510_im_locked_in_here_tighter_than_a_frogs_butt_in_a_watermelon_seed_fight.mp3

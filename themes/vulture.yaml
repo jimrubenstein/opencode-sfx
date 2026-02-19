@@ -1,0 +1,16 @@
+name: Vulture
+description: Hoverbike rider
+
+sounds:
+  announce: 182206_i_read_you_sir.mp3
+  question: 182192_i_dont_have_time_to_fuck_around.mp3
+  idle:
+    - 182203_yeah.mp3
+    - 182210_yeah_im_going.mp3
+    - 182213_i_dig.mp3
+    - 182215_no_problem.mp3
+  error:
+    - 182190_something_you_wanted.mp3
+    - 182194_you_keep_pushing_this_boy.mp3
+    - 182197_then_ill_scratch_you_along_with_the_aliens.mp3
+    - 182199_alright_bring_it_on.mp3

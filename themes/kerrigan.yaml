@@ -1,0 +1,16 @@
+name: Sarah Kerrigan
+description: Ghost operative
+
+sounds:
+  announce: 182406_lieutenant_kerrigan_reporting.mp3
+  question: 182411_im_waiting_on_you.mp3
+  idle:
+    - 182416_i_gotcha.mp3
+    - 182418_thinking_the_same_thing.mp3
+    - 182421_itd_be_a_pleasure.mp3
+    - 182423_i_read_ya.mp3
+  error:
+    - 182395_easily_amused.mp3
+    - 182397_doesnt_take_a_telepath_to_know_what_youre_thinking.mp3
+    - 182399_you_get_up_an_annoying_people_dont_you.mp3
+    - 182404_ive_got_a_job_to_do.mp3

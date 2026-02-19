@@ -1,0 +1,16 @@
+name: Terran Advisor
+description: Base announcements
+
+sounds:
+  announce: 182029_nuclear_missile_ready.mp3
+  question: 182001_additional_supply_depots_required.mp3
+  idle:
+    - 182016_research_complete.mp3
+    - 182019_add_on_complete.mp3
+    - 182026_upgrade_complete.mp3
+    - 182029_nuclear_missile_ready.mp3
+  error:
+    - 181994_not_enough_minerals.mp3
+    - 181998_insufficient_vespene_gas.mp3
+    - 182008_not_enough_energy.mp3
+    - 182477_i_cant_build_it_some_things_in_the_way.mp3

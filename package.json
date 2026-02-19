@@ -1,0 +1,21 @@
+{
+  "name": "opencode-sfx",
+  "version": "0.1.0",
+  "description": "StarCraft-themed sound effects plugin for OpenCode",
+  "main": "index.ts",
+  "type": "module",
+  "scripts": {
+    "build:themes": "node scripts/build-themes.js"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "*",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": "*"
+  }
+}

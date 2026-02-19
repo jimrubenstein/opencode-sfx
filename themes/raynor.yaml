@@ -1,0 +1,14 @@
+name: Jim Raynor
+description: Mar Sara marshal
+
+sounds:
+  announce: 182129_raynor_here.mp3
+  question: 182133_go_ahead_commander_1.mp3
+  idle:
+    - 182138_right_on.mp3
+    - 182140_this_should_be_good.mp3
+    - 182142_oh_yeah.mp3
+    - 182134_sounds_fun.mp3
+  error:
+    - 182124_whats_your_problem_is.mp3
+    - 182126_do_you_mind.mp3

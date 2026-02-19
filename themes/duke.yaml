@@ -1,0 +1,16 @@
+name: General Duke
+description: Confederate general
+
+sounds:
+  announce: 181962_in_a_general_for_fifteen_years.mp3
+  question: 181982_make_up_your_mind.mp3
+  idle:
+    - 181986_about_time.mp3
+    - 181988_decisive_action.mp3
+    - 181989_should_work.mp3
+    - 181991_alright_then.mp3
+  error:
+    - 181962_in_a_general_for_fifteen_years.mp3
+    - 181965_damn_im_taking_orders_from_a_pup.mp3
+    - 181967_this_korhol_outfits_a_mess.mp3
+    - 181970_we_all_need_some_good_old_fashioned_discipline.mp3

@@ -1,0 +1,15 @@
+name: Comedy/Annoyed
+description: Easter egg lines from clicking units too many times
+
+sounds:
+  announce: 182232_can_i_take_your_order.mp3
+  question: 182078_are_you_going_to_give_me_orders.mp3
+  idle:
+    - 182081_oh_my_god_hes_whacked.mp3
+    - 182326_got_any_questions_about_propane.mp3
+    - 182270_i_really_have_to_go_number_one.mp3
+    - 182510_im_locked_in_here_tighter_than_a_frogs_butt_in_a_watermelon_seed_fight.mp3
+  error:
+    - 182154_what_is_your_major_malfunction.mp3
+    - 182192_i_dont_have_time_to_fuck_around.mp3
+    - 182084_i_vote_we_frag_this_commander.mp3
