@@ -25,7 +25,7 @@ npm install
 
 Sound files are not included in this repository. You need to provide your own StarCraft sound files.
 
-Place MP3 files in `~/sounds/starcraft/mp3_trimmed/` (or set `OC_SFX_SOUNDS_DIR` to a custom path).
+Place MP3 files in `~/sounds/starcraft/mp3_trimmed/` (or set `OCSFX_SOUNDS_PATH` to a custom path).
 
 The filenames should match those referenced in the `themes/*.yaml` files.
 
@@ -65,7 +65,7 @@ Each theme is defined in a YAML file under `themes/`. Available themes:
 
 ### Theme Selection Priority
 
-1. `OCSFX_PROFILE` environment variable
+1. `OCSFX_THEME` environment variable
 2. `.ocsfx` file in current directory (just the theme name)
 3. TTY-to-profile mapping (persists per terminal session)
 4. Random selection (avoiding themes used by other running instances)
@@ -92,8 +92,9 @@ sounds:
 
 | Variable | Description |
 |----------|-------------|
-| `OCSFX_PROFILE` | Force a specific theme (e.g., `marine`) |
-| `OC_SFX_SOUNDS_DIR` | Custom path to sound files directory |
+| `OCSFX_THEME` | Force a specific theme (e.g., `marine`) |
+| `OCSFX_SOUNDS_PATH` | Custom path to sound files directory |
+| `OCSFX_ALERT` | Custom tmux alert prefix (default: `!! `) |
 
 ## Commands
 
@@ -139,10 +140,6 @@ The `/sfx create` command starts an interactive wizard that guides you through c
 
 Each sound is previewed when selected so you can hear what you're choosing.
 
-### `/ak` - Acknowledge
-
-Clear the tmux alert prefix (`!! `) from the window name.
-
 ## How It Works
 
 ### Theme Caching
@@ -161,10 +158,124 @@ Sounds only play when the pane is NOT active (you're looking elsewhere).
 
 ### Tmux Alerts
 
-When a sound plays in a background tmux pane, the window name is prefixed with `!! ` to visually indicate attention is needed. This is cleared when:
+When a sound plays in a background tmux pane, the window name is prefixed with `!! ` (configurable via `OCSFX_ALERT`) to visually indicate attention is needed. This is cleared when:
 - You switch to that pane
-- You run the `/ak` command
+- You send a message or run a command in that pane
 - A new event fires while you're viewing the pane
+
+#### Keybinding: Clear Alert
+
+Add this to your `~/.tmux.conf` to clear the alert prefix with `prefix + Enter`:
+
+```tmux
+bind-key Enter run-shell 'name="$(tmux display-message -p "##{window_name}")"; tmux rename-window "${name#!! }"'
+```
+
+If you've customized `OCSFX_ALERT`, replace `!! ` with your prefix.
+
+#### Status Bar: Agent Detection
+
+The script below color-codes tmux window tabs based on AI agent status by inspecting pane content:
+
+| Color | Meaning |
+|-------|---------|
+| Blue (`#89b4fa`) | No agent present |
+| Lavender (`#cba6f7`) | Agent idle (waiting for input) |
+| Green (`#a6e3a1`) | Agent actively working |
+
+Save this as `~/.tmux/agent-status.sh` and make it executable (`chmod +x`):
+
+```sh
+#!/bin/sh
+# Detect AI agent status in a tmux window's panes and output a tmux
+# style tag (#[fg=X,bg=Y,...]) for a specific position in the tab.
+#
+# Detection is content-based — checks pane content for TUI status text:
+#   "esc interrupt" / "esc to interrupt" = agent actively working
+#   "ctrl+p commands" = agent idle, waiting for input (OpenCode)
+#
+# Usage: agent-status.sh <position> <window_id>
+#   position: 1 = mid-separator style (fg=accent, bg=gray)
+#             2 = number background style (fg=gray, bg=accent)
+#             3 = right-separator style (fg=accent, bg=default)
+#   window_id: tmux window identifier (e.g., @0)
+#
+# Accent colors (Catppuccin Mocha):
+#   Blue     (#89b4fa) = no agent
+#   Lavender (#cba6f7) = agent idle
+#   Green    (#a6e3a1) = agent active
+#
+# Results are cached per window in /tmp/tmux-agent-status-<window_id>
+# so that all 3 position calls share one detection pass.
+
+position="$1"
+window_id="$2"
+
+if [ -z "$window_id" ] || [ -z "$position" ]; then
+  echo ""
+  exit 0
+fi
+
+# --- Catppuccin Mocha constants ---
+gray="#313244"
+
+# --- Cache: reuse detection result within the same status-interval ---
+cache_file="/tmp/tmux-agent-status-${window_id#@}"
+
+if [ -f "$cache_file" ]; then
+  cache_age=$(( $(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0) ))
+  if [ "$cache_age" -lt 2 ]; then
+    accent=$(cat "$cache_file")
+  fi
+fi
+
+if [ -z "$accent" ]; then
+  # --- Detect agent status ---
+  agent_status=0  # 0=none, 1=idle, 2=active
+
+  for pane_id in $(tmux list-panes -t "$window_id" -F '#{pane_id}' 2>/dev/null); do
+    last_lines=$(tmux capture-pane -p -t "$pane_id" 2>/dev/null | tail -5)
+
+    case "$last_lines" in
+      *"esc interrupt"*|*"esc to interrupt"*)
+        agent_status=2
+        break
+        ;;
+    esac
+
+    case "$last_lines" in
+      *"ctrl+p commands"*)
+        agent_status=1
+        ;;
+    esac
+  done
+
+  # --- Pick accent color ---
+  case "$agent_status" in
+    2) accent="#a6e3a1" ;;  # green — active
+    1) accent="#cba6f7" ;;  # lavender — idle
+    *) accent="#89b4fa" ;;  # blue — none
+  esac
+
+  printf '%s' "$accent" > "$cache_file"
+fi
+
+# --- Output style tag for the requested position ---
+case "$position" in
+  1) printf '#[fg=%s,bg=%s,nobold,nounderscore,noitalics]' "$accent" "$gray" ;;
+  2) printf '#[fg=%s,bg=%s]' "$gray" "$accent" ;;
+  3) printf '#[fg=%s,bg=default]' "$accent" ;;
+esac
+```
+
+Then wire it into your tab format. This example is for Catppuccin — add it **after** TPM initializes so it overrides the theme's default format:
+
+```tmux
+# Must come after: run '~/.tmux/plugins/tpm/tpm'
+run-shell 'tmux setw -g window-status-format "#[fg=#313244,bg=default,nobold,nounderscore,noitalics]#[fg=#cdd6f4,bg=#313244]##W##(~/.tmux/agent-status.sh 1 ##{window_id}) █##(~/.tmux/agent-status.sh 2 ##{window_id})##I##(~/.tmux/agent-status.sh 3 ##{window_id}) "'
+```
+
+The script caches results per window for 2 seconds to avoid redundant detection across the 3 position calls within each status interval.
 
 ## License
 

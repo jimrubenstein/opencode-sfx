@@ -10,16 +10,16 @@ import { playSound as playSoundLib, isDebugMode, isTestMode } from "./lib/sound-
 // CONFIGURATION
 // =============================================================================
 
-// Default sounds directory - can be overridden via OC_SFX_SOUNDS_DIR env var
+// Default sounds directory - can be overridden via OCSFX_SOUNDS_PATH env var
 const DEFAULT_SOUNDS_DIR = join(homedir(), "sounds/starcraft/mp3_trimmed")
-const SOUNDS_DIR = process.env.OC_SFX_SOUNDS_DIR || DEFAULT_SOUNDS_DIR
+const SOUNDS_DIR = process.env.OCSFX_SOUNDS_PATH || DEFAULT_SOUNDS_DIR
 
 // State directory for instance tracking and TTY profiles
 const STATE_DIR = join(homedir(), ".config/opencode/.opencode-sfx")
 const INSTANCE_ID = process.pid.toString()
 
 // Environment variable for explicit profile selection
-const ENV_PROFILE = "OCSFX_PROFILE"
+const ENV_PROFILE = "OCSFX_THEME"
 // Per-directory profile file (optional, for per-project explicit config)
 const PROFILE_FILE = ".ocsfx"
 // TTY-to-profile mapping stored in home directory
@@ -35,7 +35,7 @@ let cachedWindowTitle: string | null = null
 let cachedTmuxWindowName: string | null = null
 let hasAlert = false
 
-const ALERT_PREFIX = "!! "
+const ALERT_PREFIX = process.env.OCSFX_ALERT ?? "!! "
 
 // Capture our window info at startup (call this once during plugin init)
 function captureWindowInfo(): void {
@@ -456,7 +456,7 @@ function getAvailableThemes(state: InstanceState): string[] {
 }
 
 // Determine the profile using priority:
-// 1. OCSFX_PROFILE env var (explicit selection, highest priority)
+// 1. OCSFX_THEME env var (explicit selection, highest priority)
 // 2. .ocsfx file in cwd (explicit per-project config)
 // 3. TTY-to-profile mapping in home dir (persists across directories in same terminal)
 // 4. Random selection (saves to TTY mapping for persistence)
@@ -581,7 +581,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
   // Log the assigned theme with source info
   const sourceLabel =
     source === "env"
-      ? "from OCSFX_PROFILE"
+      ? "from OCSFX_THEME"
       : source === "file"
         ? "from .ocsfx"
         : source === "tty"
@@ -970,15 +970,6 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         clearTmuxAlert()
       }
 
-      // Handle command execution for /ak (acknowledge)
-      if (
-        event.type === "command.executed" &&
-        (event as any).command === "ak"
-      ) {
-        clearTmuxAlert()
-        return
-      }
-
       let soundFile: string | null = null
 
       const eventType = event.type as string
@@ -1006,12 +997,10 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         soundFile = randomSound(currentTheme.sounds.question)
       } else if (eventType === "session.error") {
         soundFile = randomSound(currentTheme.sounds.error)
-      } else if (eventType === "tui.command.execute") {
-        // Handle /ak (acknowledge) command
-        if ((event as any).properties?.command === "ak") {
-          clearTmuxAlert()
-        }
-        return // Don't play sound for command execution
+      } else if (eventType === "tui.command.execute" || eventType === "message.created") {
+        // User is interacting with this window - clear any stale alert
+        if (hasAlert) clearTmuxAlert()
+        return // Don't play sound for command execution or user messages
       }
 
       if (soundFile) {
@@ -1038,12 +1027,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         }
       }
     },
-    // Hook into TUI command execution
-    "tui.command.execute": async (input: any, _output: any) => {
-      if (input.command === "ak" || input.command === "/ak") {
-        clearTmuxAlert()
-      }
-    },
+
   }
 }
 

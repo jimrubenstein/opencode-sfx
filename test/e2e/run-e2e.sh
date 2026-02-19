@@ -121,7 +121,7 @@ start_opencode_session() {
   # Run from the PROJECT_DIR where opencode.json has the plugin configured
   # Force the "test" theme which uses the test sound filenames
   tmux new-session -d -s "$SESSION_NAME" -c "$PROJECT_DIR" \
-    "export OCSFX_DEBUG=test; export OCSFX_LOG_FILE='$LOG_FILE'; export OC_SFX_SOUNDS_DIR='$PROJECT_DIR/test/sounds'; export OCSFX_PROFILE=test; opencode 2>&1 | tee '$STDOUT_LOG'"
+    "export OCSFX_DEBUG=test; export OCSFX_LOG_FILE='$LOG_FILE'; export OCSFX_SOUNDS_PATH='$PROJECT_DIR/test/sounds'; export OCSFX_THEME=test; opencode 2>&1 | tee '$STDOUT_LOG'"
   
   # Wait for OpenCode to start and plugin to initialize
   local waited=0

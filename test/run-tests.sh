@@ -19,7 +19,7 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 
 # Override sounds directory to use test sounds
-export OC_SFX_SOUNDS_DIR="$TEST_DIR/sounds"
+export OCSFX_SOUNDS_PATH="$TEST_DIR/sounds"
 
 log_pass() {
   echo -e "${GREEN}✓ PASS${NC}: $1"
@@ -52,7 +52,7 @@ echo "OpenCode SFX Plugin Test Suite"
 echo "========================================"
 echo ""
 log_info "Test directory: $TEST_DIR"
-log_info "Sounds directory: $OC_SFX_SOUNDS_DIR"
+log_info "Sounds directory: $OCSFX_SOUNDS_PATH"
 echo ""
 
 # Test 1: Plugin loads and config is correct
