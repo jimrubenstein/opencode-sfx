@@ -5,7 +5,9 @@
   "main": "index.ts",
   "type": "module",
   "scripts": {
-    "build:themes": "node scripts/build-themes.js"
+    "build:themes": "node scripts/build-themes.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "yaml": "^2.7.0"
@@ -13,7 +15,8 @@
   "devDependencies": {
     "@opencode-ai/plugin": "*",
     "@types/node": "^22.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.18"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "*"
