@@ -4,7 +4,8 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # OpenCode SFX - Installer
 # ---------------------------------------------------------------------------
-# Installs the sound effects plugin into your OpenCode config.
+# Installs sound effects for AI coding agents. Detects which clients you have
+# installed (OpenCode, Claude Code, Gemini CLI, Codex) and configures each.
 #
 # Usage:
 #   # From a cloned repo:
@@ -60,7 +61,7 @@ confirm() {
 
 echo ""
 info "OpenCode SFX Installer"
-echo "  Sound effects plugin for OpenCode"
+echo "  Sound effects for AI coding agents"
 echo ""
 
 # ---------------------------------------------------------------------------
@@ -392,14 +393,221 @@ if [ -x "$CLI_BIN" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Detect and configure other AI coding agent clients
+# ---------------------------------------------------------------------------
+
+echo ""
+info "Checking for other AI coding agent clients..."
+echo ""
+
+# --- Claude Code ---
+CLAUDE_DETECTED=false
+CLAUDE_CONFIG_DIR_PATH="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+if command -v claude &>/dev/null; then
+  CLAUDE_DETECTED=true
+elif [ -d "$CLAUDE_CONFIG_DIR_PATH" ]; then
+  CLAUDE_DETECTED=true
+fi
+
+if [ "$CLAUDE_DETECTED" = true ]; then
+  INSTALL_CLAUDE=false
+  CLAUDE_SETTINGS="$CLAUDE_CONFIG_DIR_PATH/settings.json"
+  HOOK_CMD="$PLUGIN_DIR/integrations/claude-code/hook.sh"
+
+  if [ "$AUTO_YES" = true ]; then
+    INSTALL_CLAUDE=true
+  else
+    echo -e "  ${GREEN}Found:${NC} Claude Code ($CLAUDE_CONFIG_DIR_PATH)"
+    echo "  Events: task complete, permission request, errors, startup"
+    if confirm "  Configure Claude Code? [Y/n]"; then
+      INSTALL_CLAUDE=true
+    fi
+  fi
+
+  if [ "$INSTALL_CLAUDE" = true ]; then
+    # Check if hooks are already configured
+    if [ -f "$CLAUDE_SETTINGS" ] && grep -q "opencode-sfx" "$CLAUDE_SETTINGS" 2>/dev/null; then
+      warn "Claude Code hooks already configured — skipping."
+    else
+      mkdir -p "$CLAUDE_CONFIG_DIR_PATH"
+
+      # Build hooks JSON and merge into settings
+      if python3 -c "
+import json, sys, os
+
+settings_path = sys.argv[1]
+hook_cmd = sys.argv[2]
+
+# Load existing settings or start fresh
+if os.path.exists(settings_path):
+    with open(settings_path) as f:
+        data = json.load(f)
+else:
+    data = {}
+
+hooks = data.setdefault('hooks', {})
+
+# Only add hooks that aren't already present
+hook_entry = lambda: [{'hooks': [{'type': 'command', 'command': hook_cmd}]}]
+startup_entry = lambda: [{'matcher': 'startup', 'hooks': [{'type': 'command', 'command': hook_cmd}]}]
+
+if 'Stop' not in hooks:
+    hooks['Stop'] = hook_entry()
+if 'SubagentStop' not in hooks:
+    hooks['SubagentStop'] = []  # explicitly empty — no sounds for subagents
+if 'PermissionRequest' not in hooks:
+    hooks['PermissionRequest'] = hook_entry()
+if 'PostToolUseFailure' not in hooks:
+    hooks['PostToolUseFailure'] = hook_entry()
+if 'SessionStart' not in hooks:
+    hooks['SessionStart'] = startup_entry()
+
+with open(settings_path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$CLAUDE_SETTINGS" "$HOOK_CMD" 2>/dev/null; then
+        ok "Configured Claude Code hooks in $CLAUDE_SETTINGS"
+      else
+        err "Could not configure Claude Code automatically."
+        echo "  See: $PLUGIN_DIR/integrations/claude-code/hook.sh"
+      fi
+    fi
+  fi
+else
+  echo "  Claude Code — not found"
+fi
+
+# --- Gemini CLI ---
+GEMINI_DETECTED=false
+GEMINI_CONFIG_DIR_PATH="${GEMINI_CLI_HOME:-$HOME/.gemini}"
+
+if command -v gemini &>/dev/null; then
+  GEMINI_DETECTED=true
+elif [ -d "$GEMINI_CONFIG_DIR_PATH" ]; then
+  GEMINI_DETECTED=true
+fi
+
+if [ "$GEMINI_DETECTED" = true ]; then
+  INSTALL_GEMINI=false
+  GEMINI_SETTINGS="$GEMINI_CONFIG_DIR_PATH/settings.json"
+  HOOK_CMD="$PLUGIN_DIR/integrations/gemini-cli/hook.sh"
+
+  if [ "$AUTO_YES" = true ]; then
+    INSTALL_GEMINI=true
+  else
+    echo -e "  ${GREEN}Found:${NC} Gemini CLI ($GEMINI_CONFIG_DIR_PATH)"
+    echo "  Events: task complete, notifications, startup"
+    if confirm "  Configure Gemini CLI? [Y/n]"; then
+      INSTALL_GEMINI=true
+    fi
+  fi
+
+  if [ "$INSTALL_GEMINI" = true ]; then
+    if [ -f "$GEMINI_SETTINGS" ] && grep -q "opencode-sfx" "$GEMINI_SETTINGS" 2>/dev/null; then
+      warn "Gemini CLI hooks already configured — skipping."
+    else
+      mkdir -p "$GEMINI_CONFIG_DIR_PATH"
+
+      if python3 -c "
+import json, sys, os
+
+settings_path = sys.argv[1]
+hook_cmd = sys.argv[2]
+
+if os.path.exists(settings_path):
+    with open(settings_path) as f:
+        data = json.load(f)
+else:
+    data = {}
+
+hooks = data.setdefault('hooks', {})
+
+def make_hook(event_name):
+    return [{'hooks': [{'type': 'command', 'command': f'{hook_cmd} {event_name}', 'timeout': 5000}]}]
+
+def make_startup_hook(event_name):
+    return [{'matcher': 'startup', 'hooks': [{'type': 'command', 'command': f'{hook_cmd} {event_name}', 'timeout': 5000}]}]
+
+if 'AfterAgent' not in hooks:
+    hooks['AfterAgent'] = make_hook('AfterAgent')
+if 'Notification' not in hooks:
+    hooks['Notification'] = make_hook('Notification')
+if 'SessionStart' not in hooks:
+    hooks['SessionStart'] = make_startup_hook('SessionStart')
+
+with open(settings_path, 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" "$GEMINI_SETTINGS" "$HOOK_CMD" 2>/dev/null; then
+        ok "Configured Gemini CLI hooks in $GEMINI_SETTINGS"
+      else
+        err "Could not configure Gemini CLI automatically."
+        echo "  See: $PLUGIN_DIR/integrations/gemini-cli/hook.sh"
+      fi
+    fi
+  fi
+else
+  echo "  Gemini CLI — not found"
+fi
+
+# --- Codex ---
+CODEX_DETECTED=false
+CODEX_HOME_PATH="${CODEX_HOME:-$HOME/.codex}"
+
+if command -v codex &>/dev/null; then
+  CODEX_DETECTED=true
+elif [ -d "$CODEX_HOME_PATH" ]; then
+  CODEX_DETECTED=true
+fi
+
+if [ "$CODEX_DETECTED" = true ]; then
+  INSTALL_CODEX=false
+  CODEX_CONFIG="$CODEX_HOME_PATH/config.toml"
+  NOTIFY_CMD="$PLUGIN_DIR/integrations/codex/notify.sh"
+
+  if [ "$AUTO_YES" = true ]; then
+    INSTALL_CODEX=true
+  else
+    echo -e "  ${GREEN}Found:${NC} Codex CLI ($CODEX_HOME_PATH)"
+    echo "  Events: task complete only (limited)"
+    if confirm "  Configure Codex CLI? [Y/n]"; then
+      INSTALL_CODEX=true
+    fi
+  fi
+
+  if [ "$INSTALL_CODEX" = true ]; then
+    if [ -f "$CODEX_CONFIG" ] && grep -q "opencode-sfx" "$CODEX_CONFIG" 2>/dev/null; then
+      warn "Codex CLI notify already configured — skipping."
+    else
+      mkdir -p "$CODEX_HOME_PATH"
+
+      if [ -f "$CODEX_CONFIG" ] && grep -q "^notify" "$CODEX_CONFIG" 2>/dev/null; then
+        warn "Codex config already has a 'notify' entry."
+        echo "  To use opencode-sfx, set notify in $CODEX_CONFIG to:"
+        echo "  notify = [\"$NOTIFY_CMD\"]"
+      else
+        # Append notify line to config (or create the file)
+        echo "" >> "$CODEX_CONFIG"
+        echo "# opencode-sfx: play sound on agent turn complete" >> "$CODEX_CONFIG"
+        echo "notify = [\"$NOTIFY_CMD\"]" >> "$CODEX_CONFIG"
+        ok "Configured Codex CLI notify in $CODEX_CONFIG"
+      fi
+    fi
+  fi
+else
+  echo "  Codex CLI — not found"
+fi
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 
 echo ""
 echo -e "${GREEN}${BOLD}Installation complete!${NC}"
 echo ""
-echo "  Restart OpenCode to load the plugin."
 echo "  A default notification theme is included — sounds work out of the box."
 echo ""
-echo "  Run /sfx in the TUI to manage themes."
+echo "  Restart your AI coding agent to activate sound effects."
+echo "  In OpenCode, run /sfx to manage themes."
 echo ""

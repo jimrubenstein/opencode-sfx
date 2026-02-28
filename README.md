@@ -1,8 +1,19 @@
 # OpenCode SFX
 
-Sound effects for [OpenCode](https://opencode.ai). Get audio notifications when your AI agent finishes a task, needs your input, or hits an error — so you can context-switch without constantly checking your terminal.
+Sound effects for AI coding agents. Get audio notifications when your agent finishes a task, needs your input, or hits an error — so you can context-switch without constantly checking your terminal.
 
 Works out of the box with built-in notification sounds. Ships with 15 StarCraft-themed sound packs if you bring your own audio files.
+
+### Supported clients
+
+| Client | Events | Coverage |
+|--------|--------|----------|
+| [OpenCode](https://opencode.ai) | idle, permission, error, startup | Full |
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Stop, PermissionRequest, PostToolUseFailure, SessionStart | Full |
+| [Gemini CLI](https://github.com/google-gemini/gemini-cli) | AfterAgent, Notification, SessionStart | Full |
+| [Codex](https://github.com/openai/codex) | agent-turn-complete | Partial (idle only) |
+
+Each client can run its own theme. The installer auto-detects which clients you have and configures them all.
 
 ## Install
 
@@ -26,7 +37,7 @@ cd ~/.config/opencode/plugins/opencode-sfx
 curl -fsSL https://raw.githubusercontent.com/jimrubenstein/opencode-sfx/main/install.sh | bash -s -- --yes
 ```
 
-Restart OpenCode after installing. You'll hear a chime — that means it's working.
+The installer detects OpenCode, Claude Code, Gemini CLI, and Codex, then prompts you to configure each one. Restart your clients after installing.
 
 ## What It Does
 
@@ -144,7 +155,12 @@ The `/sfx` command manages themes from inside OpenCode:
 
 ### Manual Configuration
 
-Add the plugin to your OpenCode config (`~/.config/opencode/opencode.json`):
+The installer handles this automatically, but if you need to configure a client manually:
+
+<details>
+<summary><strong>OpenCode</strong></summary>
+
+Add the plugin to `~/.config/opencode/opencode.json`:
 
 ```json
 {
@@ -159,6 +175,75 @@ Copy the `/sfx` command globally:
 ```bash
 cp /path/to/opencode-sfx/commands/sfx.md ~/.config/opencode/commands/
 ```
+
+</details>
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+Add hooks to `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/claude-code/hook.sh" }]
+    }],
+    "SubagentStop": [],
+    "PermissionRequest": [{
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/claude-code/hook.sh" }]
+    }],
+    "PostToolUseFailure": [{
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/claude-code/hook.sh" }]
+    }],
+    "SessionStart": [{
+      "matcher": "startup",
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/claude-code/hook.sh" }]
+    }]
+  }
+}
+```
+
+Note: `SubagentStop` is set to `[]` to suppress sounds for subagent completions.
+
+</details>
+
+<details>
+<summary><strong>Gemini CLI</strong></summary>
+
+Add hooks to `~/.gemini/settings.json`:
+
+```json
+{
+  "hooks": {
+    "AfterAgent": [{
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/gemini-cli/hook.sh AfterAgent", "timeout": 5000 }]
+    }],
+    "Notification": [{
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/gemini-cli/hook.sh Notification", "timeout": 5000 }]
+    }],
+    "SessionStart": [{
+      "matcher": "startup",
+      "hooks": [{ "type": "command", "command": "/path/to/opencode-sfx/integrations/gemini-cli/hook.sh SessionStart", "timeout": 5000 }]
+    }]
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>Codex CLI</strong></summary>
+
+Add notify to `~/.codex/config.toml`:
+
+```toml
+notify = ["/path/to/opencode-sfx/integrations/codex/notify.sh"]
+```
+
+Codex only supports one event (`agent-turn-complete`), which plays the idle sound.
+
+</details>
 
 <details>
 <summary><strong>Tmux Integration</strong></summary>
