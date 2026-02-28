@@ -4,12 +4,22 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # OpenCode SFX - Installer
 # ---------------------------------------------------------------------------
-# Adds the plugin to the user's global OpenCode config and optionally
-# installs the /sfx slash command.
+# Installs the sound effects plugin into your OpenCode config.
+#
+# Usage:
+#   # From a cloned repo:
+#   ./install.sh
+#
+#   # One-liner (clones the repo for you):
+#   curl -fsSL https://raw.githubusercontent.com/jimrubenstein/opencode-sfx/main/install.sh | bash
+#
+#   # Non-interactive (accepts all defaults):
+#   ./install.sh --yes
+#   curl -fsSL https://raw.githubusercontent.com/jimrubenstein/opencode-sfx/main/install.sh | bash -s -- --yes
 # ---------------------------------------------------------------------------
 
-PLUGIN_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGIN_PATH="$PLUGIN_DIR/plugin.ts"
+REPO_URL="https://github.com/jimrubenstein/opencode-sfx.git"
+DEFAULT_INSTALL_DIR="$HOME/.config/opencode/plugins/opencode-sfx"
 
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -21,6 +31,93 @@ info()  { echo -e "${BOLD}$1${NC}"; }
 ok()    { echo -e "${GREEN}✓${NC} $1"; }
 warn()  { echo -e "${YELLOW}!${NC} $1"; }
 err()   { echo -e "${RED}✗${NC} $1"; }
+
+# ---------------------------------------------------------------------------
+# Parse arguments
+# ---------------------------------------------------------------------------
+
+AUTO_YES=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) AUTO_YES=true ;;
+  esac
+done
+
+# Helper: prompt user or auto-accept in non-interactive mode
+confirm() {
+  local prompt="$1"
+  local default="${2:-Y}"
+  if [ "$AUTO_YES" = true ]; then
+    return 0
+  fi
+  read -rp "$prompt " answer
+  case "$default" in
+    Y) [[ ! "$answer" =~ ^[Nn] ]] ;;
+    N) [[ "$answer" =~ ^[Yy] ]] ;;
+  esac
+}
+
+echo ""
+info "OpenCode SFX Installer"
+echo "  Sound effects plugin for OpenCode"
+echo ""
+
+# ---------------------------------------------------------------------------
+# Determine plugin directory (clone if needed)
+# ---------------------------------------------------------------------------
+
+# Check if we're running from inside the repo already
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/plugin.ts" ] && [ -f "$SCRIPT_DIR/package.json" ]; then
+  # Running from inside the repo (git clone && ./install.sh)
+  PLUGIN_DIR="$SCRIPT_DIR"
+  ok "Running from cloned repo: $PLUGIN_DIR"
+else
+  # Running via curl | bash — need to clone the repo
+  PLUGIN_DIR="$DEFAULT_INSTALL_DIR"
+
+  if [ -d "$PLUGIN_DIR/.git" ] && [ -f "$PLUGIN_DIR/plugin.ts" ]; then
+    info "Found existing installation at $PLUGIN_DIR"
+    echo "  Pulling latest changes..."
+    (cd "$PLUGIN_DIR" && git pull --quiet 2>/dev/null) && \
+      ok "Updated to latest version." || \
+      warn "Could not pull updates. Continuing with existing version."
+  else
+    info "Cloning opencode-sfx..."
+    if command -v git &>/dev/null; then
+      mkdir -p "$(dirname "$PLUGIN_DIR")"
+      git clone --quiet "$REPO_URL" "$PLUGIN_DIR" 2>/dev/null && \
+        ok "Cloned to $PLUGIN_DIR" || \
+        { err "Failed to clone repository. Check your internet connection."; exit 1; }
+    else
+      err "git is required but not found. Install git and try again."
+      exit 1
+    fi
+  fi
+fi
+
+PLUGIN_PATH="$PLUGIN_DIR/plugin.ts"
+
+# ---------------------------------------------------------------------------
+# Install npm dependencies
+# ---------------------------------------------------------------------------
+
+echo ""
+if [ -f "$PLUGIN_DIR/package.json" ]; then
+  info "Installing dependencies..."
+  if command -v npm &>/dev/null; then
+    (cd "$PLUGIN_DIR" && npm install --silent) && \
+      ok "Dependencies installed." || \
+      warn "npm install failed — run 'npm install' manually in $PLUGIN_DIR"
+  else
+    warn "npm not found. Run 'npm install' manually in $PLUGIN_DIR"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Locate the OpenCode config
@@ -42,32 +139,40 @@ if [ -n "$CONFIG_FILE" ]; then
   echo ""
   info "Found OpenCode config:"
   echo "  $CONFIG_FILE"
-  echo ""
-  read -rp "Use this config? [Y/n] " answer
-  if [[ "$answer" =~ ^[Nn] ]]; then
+  if ! confirm "Use this config? [Y/n]"; then
     CONFIG_FILE=""
   fi
 fi
 
 if [ -z "$CONFIG_FILE" ]; then
-  echo ""
-  read -rp "Path to your OpenCode config file: " CONFIG_FILE
-  CONFIG_FILE="${CONFIG_FILE/#\~/$HOME}"
+  if [ "$AUTO_YES" = true ]; then
+    # In auto mode, create default config if it doesn't exist
+    CONFIG_FILE="$DEFAULT_CONFIG_DIR/opencode.json"
+    if [ ! -f "$CONFIG_FILE" ]; then
+      mkdir -p "$DEFAULT_CONFIG_DIR"
+      echo '{}' > "$CONFIG_FILE"
+      ok "Created new OpenCode config at $CONFIG_FILE"
+    fi
+  else
+    echo ""
+    read -rp "Path to your OpenCode config file: " CONFIG_FILE
+    CONFIG_FILE="${CONFIG_FILE/#\~/$HOME}"
 
-  if [ ! -f "$CONFIG_FILE" ]; then
-    err "File not found: $CONFIG_FILE"
-    exit 1
+    if [ ! -f "$CONFIG_FILE" ]; then
+      err "File not found: $CONFIG_FILE"
+      exit 1
+    fi
   fi
 fi
 
 CONFIG_DIR="$(dirname "$CONFIG_FILE")"
 
 echo ""
-info "Installing OpenCode SFX..."
+info "Configuring OpenCode SFX..."
 echo ""
 
 # ---------------------------------------------------------------------------
-# Check if plugin is already installed
+# Add plugin to config
 # ---------------------------------------------------------------------------
 
 if grep -q "plugin.ts" "$CONFIG_FILE" 2>/dev/null; then
@@ -84,7 +189,6 @@ else
   # Strategy: find "plugin": [...] and append, or add the key if missing
   if grep -q '"plugin"' "$CONFIG_FILE" 2>/dev/null; then
     # "plugin" key exists — append our path to the array
-    # Find the last entry in the plugin array and add after it
     if python3 -c "
 import json, re, sys
 
@@ -107,7 +211,6 @@ if plugin not in data.get('plugin', []):
 # Since the config may have comments/trailing commas (JSONC), we do a
 # targeted insertion instead of a full rewrite.
 
-# Find the plugin array in the raw text and insert
 import re as _re
 m = _re.search(r'\"plugin\"\s*:\s*\[', raw)
 if m:
@@ -124,7 +227,6 @@ if m:
     array_content = raw[m.end():bracket_pos].strip()
     if array_content:
         # Has entries - add after the last one with a comma
-        # Find last non-whitespace before ]
         insert_pos = bracket_pos
         while insert_pos > m.end() and raw[insert_pos-1] in ' \t\n\r':
             insert_pos -= 1
@@ -158,7 +260,7 @@ else:
       echo "    \"$PLUGIN_PATH\""
     fi
   else
-    # No "plugin" key — insert one after the opening {
+    # No "plugin" key — insert one
     if python3 -c "
 import json, sys
 
@@ -168,13 +270,17 @@ plugin = sys.argv[2]
 with open(path) as f:
     raw = f.read()
 
-# Find the first { and insert after it
-brace = raw.index('{')
-# Find the end of the line containing {
-eol = raw.index('\n', brace)
-indent = '  '
-insertion = '\n' + indent + '\"plugin\": [\n' + indent + '  ' + json.dumps(plugin) + ',\n' + indent + '],'
-new_raw = raw[:eol] + insertion + raw[eol:]
+# If it's a minimal {} (possibly with whitespace), just rewrite the whole file
+stripped = raw.strip()
+if stripped == '{}' or stripped == '':
+    new_raw = '{\n  \"plugin\": [\n    ' + json.dumps(plugin) + '\n  ]\n}\n'
+else:
+    # Find the first { and insert after its line
+    brace = raw.index('{')
+    eol = raw.index('\n', brace)
+    indent = '  '
+    insertion = '\n' + indent + '\"plugin\": [\n' + indent + '  ' + json.dumps(plugin) + '\n' + indent + '],'
+    new_raw = raw[:eol] + insertion + raw[eol:]
 
 with open(path, 'w') as f:
     f.write(new_raw)
@@ -196,13 +302,24 @@ fi
 # ---------------------------------------------------------------------------
 
 echo ""
-info "The /sfx command lets you manage themes at runtime."
-echo "  It can be installed globally (~/.config/opencode/commands/)"
-echo "  or used locally from this project directory."
-echo ""
-read -rp "Install /sfx command globally? [Y/n] " install_cmd
 
-if [[ "$install_cmd" =~ ^[Nn] ]]; then
+INSTALL_CMD=true
+if [ "$AUTO_YES" = false ]; then
+  info "The /sfx command lets you manage themes at runtime."
+  echo "  It can be installed globally (~/.config/opencode/commands/)"
+  echo "  or used locally from this project directory."
+  echo ""
+  if ! confirm "Install /sfx command globally? [Y/n]"; then
+    INSTALL_CMD=false
+  fi
+fi
+
+if [ "$INSTALL_CMD" = true ]; then
+  COMMANDS_DIR="$CONFIG_DIR/commands"
+  mkdir -p "$COMMANDS_DIR"
+  cp "$PLUGIN_DIR/commands/sfx.md" "$COMMANDS_DIR/sfx.md"
+  ok "Installed /sfx command to $COMMANDS_DIR/sfx.md"
+else
   # Add command definition to local opencode.json so it works from project root
   LOCAL_CONFIG="$PLUGIN_DIR/opencode.json"
 
@@ -238,23 +355,40 @@ with open(path, 'w') as f:
   echo ""
   warn "The /sfx command will only be available when running opencode from:"
   echo "  $PLUGIN_DIR"
-else
-  COMMANDS_DIR="$CONFIG_DIR/commands"
-  mkdir -p "$COMMANDS_DIR"
-  cp "$PLUGIN_DIR/commands/sfx.md" "$COMMANDS_DIR/sfx.md"
-  ok "Installed /sfx command to $COMMANDS_DIR/sfx.md"
 fi
 
 # ---------------------------------------------------------------------------
-# npm install
+# Symlink CLI to PATH
 # ---------------------------------------------------------------------------
 
 echo ""
-if [ -f "$PLUGIN_DIR/package.json" ]; then
-  info "Installing dependencies..."
-  (cd "$PLUGIN_DIR" && npm install --silent 2>/dev/null) && \
-    ok "Dependencies installed." || \
-    warn "npm install failed — run 'npm install' manually in $PLUGIN_DIR"
+CLI_BIN="$PLUGIN_DIR/bin/opencode-sfx"
+if [ -x "$CLI_BIN" ]; then
+  # Try common user-local bin directories
+  LINK_DIR=""
+  for candidate in "$HOME/.local/bin" "/usr/local/bin"; do
+    if [ -d "$candidate" ]; then
+      LINK_DIR="$candidate"
+      break
+    fi
+  done
+
+  if [ -n "$LINK_DIR" ]; then
+    LINK_TARGET="$LINK_DIR/opencode-sfx"
+    if [ -L "$LINK_TARGET" ] || [ -f "$LINK_TARGET" ]; then
+      ok "CLI already available at $LINK_TARGET"
+    else
+      if ln -sf "$CLI_BIN" "$LINK_TARGET" 2>/dev/null; then
+        ok "CLI linked: $LINK_TARGET"
+      else
+        warn "Could not symlink CLI to $LINK_DIR (permission denied)."
+        echo "  You can run the CLI directly: $CLI_BIN"
+      fi
+    fi
+  else
+    warn "No standard bin directory found (~/.local/bin or /usr/local/bin)."
+    echo "  You can run the CLI directly: $CLI_BIN"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -264,6 +398,8 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}Installation complete!${NC}"
 echo ""
-echo "  Restart opencode to load the plugin."
+echo "  Restart OpenCode to load the plugin."
+echo "  A default notification theme is included — sounds work out of the box."
+echo ""
 echo "  Run /sfx in the TUI to manage themes."
 echo ""
