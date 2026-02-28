@@ -1,90 +1,91 @@
 # OpenCode SFX
 
-Sound effects plugin for [OpenCode](https://opencode.ai) with StarCraft-themed audio notifications.
+Sound effects for [OpenCode](https://opencode.ai). Get audio notifications when your AI agent finishes a task, needs your input, or hits an error — so you can context-switch without constantly checking your terminal.
 
-Plays sound effects when:
-- **Session becomes idle** - Agent finished working (main agent only, not sub-agents)
-- **Permission requested** - Agent needs approval to proceed
-- **Session error** - Something went wrong
+Works out of the box with built-in notification sounds. Ships with 15 StarCraft-themed sound packs if you bring your own audio files.
 
-Also features:
-- Per-terminal theme persistence (same terminal always gets same theme)
-- Tmux window alerts (`!! ` prefix) when sounds play in background panes
-- Focus detection to avoid playing sounds when you're already looking at the terminal
+## Install
 
-## Setup
-
-### Quick Install
+**One-liner** (clones and configures everything):
 
 ```bash
-git clone https://github.com/jimrubenstein/opencode-sfx.git
-cd opencode-sfx
+curl -fsSL https://raw.githubusercontent.com/jimrubenstein/opencode-sfx/main/install.sh | bash
+```
+
+**Or clone and install manually:**
+
+```bash
+git clone https://github.com/jimrubenstein/opencode-sfx.git ~/.config/opencode/plugins/opencode-sfx
+cd ~/.config/opencode/plugins/opencode-sfx
 ./install.sh
 ```
 
-The installer will:
-1. Install npm dependencies
-2. Find your OpenCode config and add the plugin
-3. Optionally install the `/sfx` command globally
-
-### Sound Files
-
-Sound files are not included in this repository. You need to provide your own StarCraft sound files.
-
-Place MP3 files in `~/sounds/starcraft/mp3_trimmed/` (or set `OCSFX_SOUNDS_PATH` to a custom path).
-
-The filenames should match those referenced in the `themes/*.yaml` files.
-
-### Manual Install
-
-If you prefer to configure manually, add the plugin to your OpenCode config (`~/.config/opencode/opencode.json`):
-
-```json
-{
-  "plugin": [
-    "/path/to/opencode-sfx/plugin.ts"
-  ]
-}
-```
-
-Then copy the `/sfx` command to your global commands directory:
+**Non-interactive** (for scripts and AI agents):
 
 ```bash
-cp /path/to/opencode-sfx/commands/sfx.md ~/.config/opencode/commands/
+curl -fsSL https://raw.githubusercontent.com/jimrubenstein/opencode-sfx/main/install.sh | bash -s -- --yes
 ```
+
+Restart OpenCode after installing. You'll hear a chime — that means it's working.
+
+## What It Does
+
+| Event | Sound | When |
+|-------|-------|------|
+| **Task complete** | Idle notification | Agent finished working (main agent only, not sub-agents) |
+| **Permission needed** | Question ding | Agent needs your approval to proceed |
+| **Error** | Error tone | Something went wrong |
+| **Startup** | Announce chime | Plugin loaded, theme selected |
+
+Sounds only play when **you're not looking at the terminal** (focus detection for WezTerm, tmux, and macOS). If you're already watching the agent work, it stays silent.
 
 ## Themes
 
-Each theme is defined in a YAML file under `themes/`. Available themes:
+A "default" theme with simple notification tones is included. No setup needed.
 
-| Theme | Description |
-|-------|-------------|
-| `goliath` | Heavy assault walker |
-| `siege-tank` | Arclite siege tank commander |
+For more personality, the plugin ships with 15 StarCraft-themed sound packs:
+
+| Theme | Unit |
+|-------|------|
 | `marine` | Terran infantry |
 | `ghost` | Psionic operative |
+| `siege-tank` | Arclite siege tank |
+| `battlecruiser` | Capital ship |
 | `wraith` | Terran starfighter |
-| `battlecruiser` | Capital ship commander |
-| `scv` | Space construction vehicle |
+| `scv` | Construction vehicle |
 | `firebat` | Flame trooper |
-| `dropship` | Transport pilot |
-| `advisor` | Base announcements |
-| `raynor` | Jim Raynor - Mar Sara marshal |
-| `kerrigan` | Sarah Kerrigan - Ghost operative |
-| `duke` | General Duke - Confederate general |
-| `science-vessel` | Research vessel |
+| `goliath` | Assault walker |
 | `vulture` | Hoverbike rider |
+| `dropship` | Transport pilot |
+| `science-vessel` | Research vessel |
+| `advisor` | Base announcements |
+| `raynor` | Jim Raynor |
+| `kerrigan` | Sarah Kerrigan |
+| `duke` | General Duke |
 
-### Theme Selection Priority
+Each OpenCode instance gets a random theme. Multiple instances avoid picking the same one.
 
-1. `OCSFX_THEME` environment variable
-2. `.ocsfx` file in current directory (just the theme name)
-3. TTY-to-profile mapping (persists per terminal session)
-4. Random selection (avoiding themes used by other running instances)
+### Using StarCraft Themes
+
+StarCraft sound files are not included (copyright). To use them:
+
+1. Source your own StarCraft MP3 files (soundboard sites, game rips, etc.)
+2. Place them in `~/sounds/starcraft/mp3_trimmed/` (or set `OCSFX_SOUNDS_PATH`)
+3. Filenames must match those in the `themes/*.yaml` files
+
+Once the sounds are in place, the plugin automatically rotates through StarCraft themes instead of using the default.
 
 ### Creating Custom Themes
 
-Create a new YAML file in `themes/`:
+**Interactive wizard** (recommended) — browse sounds, preview them, and build a theme:
+
+```bash
+opencode-sfx create
+```
+
+The wizard walks you through picking sounds for each event type (announce, question, idle, error), previews them inline, and writes the YAML file.
+
+**Or create a YAML file manually** in `themes/`:
 
 ```yaml
 name: My Theme
@@ -100,7 +101,33 @@ sounds:
     - error_sound.mp3
 ```
 
-## Environment Variables
+## CLI
+
+The `opencode-sfx` command is available after installation:
+
+```
+opencode-sfx create    Interactive theme creation wizard
+opencode-sfx help      Show help
+```
+
+## In-Session Commands
+
+The `/sfx` command manages themes from inside OpenCode:
+
+```
+/sfx                  Show help and current theme
+/sfx list             List all available themes
+/sfx view [theme]     View theme details
+/sfx change <theme>   Switch to a different theme
+/sfx reload           Reload themes from YAML files
+/sfx test             Play the current theme's announce sound
+/sfx sounds [filter]  List sound files
+/sfx play <file>      Preview a sound file
+```
+
+## Configuration
+
+### Environment Variables
 
 | Variable | Description |
 |----------|-------------|
@@ -108,86 +135,51 @@ sounds:
 | `OCSFX_SOUNDS_PATH` | Custom path to sound files directory |
 | `OCSFX_ALERT` | Custom tmux alert prefix (default: `!! `) |
 
-## Commands
+### Theme Selection Priority
 
-### `/sfx` - Theme Management
+1. `OCSFX_THEME` environment variable
+2. `.ocsfx` file in current directory (just the theme name)
+3. TTY-to-profile mapping (persists per terminal session)
+4. Random selection (prefers `default` if no custom sounds found)
 
-Manage sound effect themes at runtime.
+### Manual Configuration
 
-```
-/sfx                  - Show help and current theme
-/sfx list             - List all available themes
-/sfx view [theme]     - View theme details (default: current)
-/sfx change <theme>   - Switch to a different theme
-/sfx reload           - Reload themes from YAML files
-/sfx test             - Play the current theme's announce sound
-/sfx create           - Start interactive theme creation wizard
-/sfx sounds [dir]     - List sound files in directory
-/sfx play <file>      - Preview a sound file
-```
+Add the plugin to your OpenCode config (`~/.config/opencode/opencode.json`):
 
-**Examples:**
-```
-/sfx list              # See all themes (* marks current)
-/sfx view marine       # See details of the marine theme
-/sfx change ghost      # Switch to ghost theme
-/sfx reload            # Pick up changes to YAML files
-/sfx create            # Start wizard to create a new theme
-/sfx sounds            # List available sound files
-/sfx play startup.mp3  # Preview a specific sound
+```json
+{
+  "plugin": [
+    "/path/to/opencode-sfx/plugin.ts"
+  ]
+}
 ```
 
-### Theme Creation Wizard
+Copy the `/sfx` command globally:
 
-The `/sfx create` command starts an interactive wizard that guides you through creating a new theme. The AI assistant will:
+```bash
+cp /path/to/opencode-sfx/commands/sfx.md ~/.config/opencode/commands/
+```
 
-1. Ask you to name the theme
-2. Ask for a description
-3. Show available sound files and let you select:
-   - **Announce sound** - Played on startup
-   - **Question sound** - Played when waiting for input
-   - **Idle sounds** - Played when tasks complete (multiple)
-   - **Error sounds** - Played on errors (multiple)
-4. Create the YAML file and reload themes
+<details>
+<summary><strong>Tmux Integration</strong></summary>
 
-Each sound is previewed when selected so you can hear what you're choosing.
+### Window Alerts
 
-## How It Works
-
-### Theme Caching
-
-Themes are loaded from YAML on first run and cached to `.cache/themes.json`. The cache is automatically invalidated when any theme file is modified.
-
-### Focus Detection
-
-The plugin detects if you're currently looking at the terminal:
-
-1. **WezTerm**: Checks if the specific WezTerm window is focused
-2. **Tmux**: Checks if the specific tmux pane is active
-3. **Fallback**: Checks if any terminal app is frontmost
-
-Sounds only play when the pane is NOT active (you're looking elsewhere).
-
-### Tmux Alerts
-
-When a sound plays in a background tmux pane, the window name is prefixed with `!! ` (configurable via `OCSFX_ALERT`) to visually indicate attention is needed. This is cleared when:
+When a sound plays in a background tmux pane, the window name is prefixed with `!! ` (configurable via `OCSFX_ALERT`). This is cleared when:
 - You switch to that pane
 - You send a message or run a command in that pane
-- A new event fires while you're viewing the pane
 
 #### Keybinding: Clear Alert
 
-Add this to your `~/.tmux.conf` to clear the alert prefix with `prefix + Enter`:
+Add to `~/.tmux.conf` to clear the alert prefix with `prefix + Enter`:
 
 ```tmux
 bind-key Enter run-shell 'name="$(tmux display-message -p "##{window_name}")"; tmux rename-window "${name#!! }"'
 ```
 
-If you've customized `OCSFX_ALERT`, replace `!! ` with your prefix.
+### Status Bar: Agent Detection
 
-#### Status Bar: Agent Detection
-
-The script below color-codes tmux window tabs based on AI agent status by inspecting pane content:
+Color-code tmux window tabs based on AI agent status:
 
 | Color | Meaning |
 |-------|---------|
@@ -195,30 +187,16 @@ The script below color-codes tmux window tabs based on AI agent status by inspec
 | Lavender (`#cba6f7`) | Agent idle (waiting for input) |
 | Green (`#a6e3a1`) | Agent actively working |
 
-Save this as `~/.tmux/agent-status.sh` and make it executable (`chmod +x`):
+Save as `~/.tmux/agent-status.sh` and `chmod +x`:
 
 ```sh
 #!/bin/sh
 # Detect AI agent status in a tmux window's panes and output a tmux
-# style tag (#[fg=X,bg=Y,...]) for a specific position in the tab.
-#
-# Detection is content-based — checks pane content for TUI status text:
-#   "esc interrupt" / "esc to interrupt" = agent actively working
-#   "ctrl+p commands" = agent idle, waiting for input (OpenCode)
+# style tag for a specific position in the tab.
 #
 # Usage: agent-status.sh <position> <window_id>
-#   position: 1 = mid-separator style (fg=accent, bg=gray)
-#             2 = number background style (fg=gray, bg=accent)
-#             3 = right-separator style (fg=accent, bg=default)
+#   position: 1 = mid-separator, 2 = number bg, 3 = right-separator
 #   window_id: tmux window identifier (e.g., @0)
-#
-# Accent colors (Catppuccin Mocha):
-#   Blue     (#89b4fa) = no agent
-#   Lavender (#cba6f7) = agent idle
-#   Green    (#a6e3a1) = agent active
-#
-# Results are cached per window in /tmp/tmux-agent-status-<window_id>
-# so that all 3 position calls share one detection pass.
 
 position="$1"
 window_id="$2"
@@ -228,10 +206,7 @@ if [ -z "$window_id" ] || [ -z "$position" ]; then
   exit 0
 fi
 
-# --- Catppuccin Mocha constants ---
 gray="#313244"
-
-# --- Cache: reuse detection result within the same status-interval ---
 cache_file="/tmp/tmux-agent-status-${window_id#@}"
 
 if [ -f "$cache_file" ]; then
@@ -242,7 +217,6 @@ if [ -f "$cache_file" ]; then
 fi
 
 if [ -z "$accent" ]; then
-  # --- Detect agent status ---
   agent_status=0  # 0=none, 1=idle, 2=active
 
   for pane_id in $(tmux list-panes -t "$window_id" -F '#{pane_id}' 2>/dev/null); do
@@ -262,7 +236,6 @@ if [ -z "$accent" ]; then
     esac
   done
 
-  # --- Pick accent color ---
   case "$agent_status" in
     2) accent="#a6e3a1" ;;  # green — active
     1) accent="#cba6f7" ;;  # lavender — idle
@@ -272,7 +245,6 @@ if [ -z "$accent" ]; then
   printf '%s' "$accent" > "$cache_file"
 fi
 
-# --- Output style tag for the requested position ---
 case "$position" in
   1) printf '#[fg=%s,bg=%s,nobold,nounderscore,noitalics]' "$accent" "$gray" ;;
   2) printf '#[fg=%s,bg=%s]' "$gray" "$accent" ;;
@@ -280,14 +252,28 @@ case "$position" in
 esac
 ```
 
-Then wire it into your tab format. This example is for Catppuccin — add it **after** TPM initializes so it overrides the theme's default format:
+Wire into your tab format (after TPM initializes for Catppuccin):
 
 ```tmux
-# Must come after: run '~/.tmux/plugins/tpm/tpm'
 run-shell 'tmux setw -g window-status-format "#[fg=#313244,bg=default,nobold,nounderscore,noitalics]#[fg=#cdd6f4,bg=#313244]##W##(~/.tmux/agent-status.sh 1 ##{window_id}) █##(~/.tmux/agent-status.sh 2 ##{window_id})##I##(~/.tmux/agent-status.sh 3 ##{window_id}) "'
 ```
 
-The script caches results per window for 2 seconds to avoid redundant detection across the 3 position calls within each status interval.
+Cache is per-window for 2 seconds to avoid redundant detection.
+
+</details>
+
+<details>
+<summary><strong>How Focus Detection Works</strong></summary>
+
+The plugin detects if you're looking at the terminal to avoid playing sounds unnecessarily:
+
+1. **WezTerm**: Checks if the specific WezTerm window and pane are focused
+2. **Tmux**: Checks if the specific tmux session/window/pane is active
+3. **Fallback (macOS)**: Checks if any terminal app is the frontmost application
+
+Sounds only play when the pane is NOT active.
+
+</details>
 
 ## License
 
