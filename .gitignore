@@ -4,11 +4,15 @@ node_modules/
 # Build cache
 .cache/
 
-# Sound files (not included in repo - too large / copyright)
-sounds/
-*.mp3
+# Sound files (user-provided, not included in repo - too large / copyright)
+# The sounds/default/ directory IS tracked (bundled synthetic notification tones)
+sounds/*
+!sounds/default/
 *.wav
 *.ogg
+
+# Test sound fixtures (mock files, not real audio)
+test/sounds/
 
 # OS files
 .DS_Store
