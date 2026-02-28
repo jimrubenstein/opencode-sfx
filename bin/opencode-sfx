@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# OpenCode SFX CLI — thin wrapper that runs the TypeScript entry point.
+# Uses tsx for reliable TypeScript execution with ESM imports.
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CLI_ENTRY="$SCRIPT_DIR/../cli/index.ts"
+
+# Try tsx (installed globally)
+if command -v tsx &>/dev/null; then
+  exec tsx "$CLI_ENTRY" "$@"
+fi
+
+# Try npx tsx (from local node_modules or remote)
+if command -v npx &>/dev/null; then
+  exec npx --yes tsx "$CLI_ENTRY" "$@"
+fi
+
+echo "Error: tsx is required to run the CLI." >&2
+echo "Install it: npm install -g tsx" >&2
+exit 1

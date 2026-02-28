@@ -11,6 +11,6 @@
     "rootDir": ".",
     "resolveJsonModule": true
   },
-  "include": ["plugin.ts", "lib/**/*.ts"],
+  "include": ["plugin.ts", "lib/**/*.ts", "cli/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

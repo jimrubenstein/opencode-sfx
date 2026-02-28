@@ -1,17 +1,37 @@
 {
   "name": "opencode-sfx",
   "version": "0.1.0",
-  "description": "StarCraft-themed sound effects plugin for OpenCode",
+  "description": "Sound effects plugin for OpenCode — audio notifications when your AI agent finishes, needs input, or errors",
   "main": "index.ts",
   "type": "module",
+  "license": "MIT",
+  "author": "Jim Rubenstein",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jimrubenstein/opencode-sfx.git"
+  },
+  "homepage": "https://github.com/jimrubenstein/opencode-sfx",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "sound-effects",
+    "notifications",
+    "ai-coding",
+    "terminal",
+    "tmux",
+    "starcraft"
+  ],
+  "bin": {
+    "opencode-sfx": "./bin/opencode-sfx"
+  },
   "scripts": {
-    "build:themes": "node scripts/build-themes.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "bash test/e2e/run-e2e.sh",
     "test:e2e:debug": "bash test/e2e/run-e2e.sh --keep-session"
   },
   "dependencies": {
+    "@clack/prompts": "^1.0.1",
     "yaml": "^2.7.0"
   },
   "devDependencies": {
