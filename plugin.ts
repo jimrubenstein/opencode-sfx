@@ -1,8 +1,9 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin, PluginInput } from "@opencode-ai/plugin"
 import { homedir } from "os"
-import { join } from "path"
+import { join, dirname } from "path"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs"
 import { execSync } from "child_process"
+import { fileURLToPath } from "url"
 import { loadThemes, getThemeNames, getTheme, reloadThemes, type SoundTheme } from "./lib/themes.js"
 import { playSound as playSoundLib, isDebugMode, isTestMode } from "./lib/sound-player.js"
 
@@ -10,9 +11,30 @@ import { playSound as playSoundLib, isDebugMode, isTestMode } from "./lib/sound-
 // CONFIGURATION
 // =============================================================================
 
+// Plugin directory (where this file lives) — used for bundled sounds fallback
+const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
+
 // Default sounds directory - can be overridden via OCSFX_SOUNDS_PATH env var
 const DEFAULT_SOUNDS_DIR = join(homedir(), "sounds/starcraft/mp3_trimmed")
 const SOUNDS_DIR = process.env.OCSFX_SOUNDS_PATH || DEFAULT_SOUNDS_DIR
+
+// Bundled sounds directory (ships with the plugin, e.g. the "default" theme)
+const BUNDLED_SOUNDS_DIR = join(PLUGIN_DIR, "sounds")
+
+/**
+ * Resolve a sound filename to a full path.
+ * Checks the user's SOUNDS_DIR first, then falls back to the plugin's
+ * bundled sounds/ directory (for the default theme's built-in sounds).
+ */
+function resolveSoundPath(soundFile: string): string | null {
+  const userPath = join(SOUNDS_DIR, soundFile)
+  if (existsSync(userPath)) return userPath
+
+  const bundledPath = join(BUNDLED_SOUNDS_DIR, soundFile)
+  if (existsSync(bundledPath)) return bundledPath
+
+  return null
+}
 
 // State directory for instance tracking and TTY profiles
 const STATE_DIR = join(homedir(), ".config/opencode/.opencode-sfx")
@@ -426,9 +448,14 @@ function cleanupStaleInstances(state: InstanceState): void {
 function getAvailableThemes(state: InstanceState): string[] {
   const usedThemes = new Set(Object.values(state.instances).map((i) => i.theme))
   const allThemes = getThemeNames()
-  const available = allThemes.filter((t) => !usedThemes.has(t))
-  // If all themes are used, return all themes (will pick randomly)
-  return available.length > 0 ? available : allThemes
+  // Exclude "test" and "default" from random rotation when the user has custom sounds
+  // (default is the fallback for users without custom sounds; test is for development)
+  const candidateThemes = existsSync(SOUNDS_DIR)
+    ? allThemes.filter((t) => t !== "test" && t !== "default")
+    : allThemes.filter((t) => t !== "test")
+  const available = candidateThemes.filter((t) => !usedThemes.has(t))
+  // If all candidate themes are used, return all candidates (will pick randomly)
+  return available.length > 0 ? available : candidateThemes.length > 0 ? candidateThemes : allThemes
 }
 
 // Determine the profile using priority:
@@ -464,8 +491,16 @@ function determineProfile(): { profile: string; source: string } {
   const state = loadState()
   cleanupStaleInstances(state)
   const availableThemes = getAvailableThemes(state)
-  const randomProfile =
-    availableThemes[Math.floor(Math.random() * availableThemes.length)]
+
+  // If the user's sounds directory doesn't exist, prefer the "default" theme
+  // (its bundled sounds ship with the plugin and work out of the box)
+  let randomProfile: string
+  if (!existsSync(SOUNDS_DIR) && availableThemes.includes("default")) {
+    randomProfile = "default"
+  } else {
+    randomProfile =
+      availableThemes[Math.floor(Math.random() * availableThemes.length)]
+  }
 
   // Save to TTY mapping for persistence (if we have a TTY identifier)
   if (currentTty) {
@@ -514,11 +549,47 @@ function randomSound(sounds: string[]): string | null {
   return sounds[Math.floor(Math.random() * sounds.length)]
 }
 
+/**
+ * Check if a session is a sub-agent (has a parentID).
+ * Returns true if it's a sub-agent, false if it's a top-level session.
+ * On failure (e.g. session not found), returns false (fail-open: play the sound).
+ */
+let _isSubagentClient: PluginInput["client"] | null = null
+async function isSubagentSession(sessionID: string): Promise<boolean> {
+  if (!_isSubagentClient) return false
+  try {
+    const session = await _isSubagentClient.session.get({
+      path: { id: sessionID },
+      query: { directory: process.cwd() },
+    })
+    return !!session.data?.parentID
+  } catch {
+    // If we can't fetch session info, assume it's not a sub-agent (fail-open)
+    return false
+  }
+}
+
 // =============================================================================
 // PLUGIN EXPORT
 // =============================================================================
 
 export const OpenCodeSFX: Plugin = async ({ $, client }) => {
+  // Skip sound effects in non-interactive/headless mode (e.g., opencode run spawned by a bash tool).
+  // When there's no TTY on stdin, there's no user at a terminal to hear the sounds.
+  if (!process.stdin.isTTY) {
+    await client.app.log({
+      body: {
+        service: "opencode-sfx",
+        level: "info",
+        message: "OpenCode SFX: disabled (non-interactive mode, no TTY)",
+      },
+    })
+    return {}
+  }
+
+  // Store client reference for sub-agent session lookups
+  _isSubagentClient = client
+
   // Capture window info at startup for focus detection
   captureWindowInfo()
 
@@ -594,8 +665,8 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
     // Play announcement sound
     const announceFile = randomSound(currentTheme.sounds.announce)
     if (announceFile) {
-      const announcePath = join(SOUNDS_DIR, announceFile)
-      if (existsSync(announcePath)) {
+      const announcePath = resolveSoundPath(announceFile)
+      if (announcePath) {
         playSoundAlways(announcePath, "theme.switch", "theme changed")
       }
     }
@@ -606,8 +677,8 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
   // Play the announcement sound on startup (always, regardless of focus)
   const announceFile = randomSound(currentTheme.sounds.announce)
   if (announceFile) {
-    const announcePath = join(SOUNDS_DIR, announceFile)
-    if (existsSync(announcePath)) {
+    const announcePath = resolveSoundPath(announceFile)
+    if (announcePath) {
       playSoundAlways(announcePath, "startup", "plugin initialized")
     }
   }
@@ -736,17 +807,17 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           if (!soundFile) {
             return `Error: No announce sounds configured for theme ${currentThemeKey}`
           }
-          const soundPath = join(SOUNDS_DIR, soundFile)
-          if (existsSync(soundPath)) {
+          const soundPath = resolveSoundPath(soundFile)
+          if (soundPath) {
             playSoundAlways(soundPath, "test", "user requested test")
             return `Playing: ${soundFile} (theme: ${currentThemeKey})`
           }
-          return `Error: Sound file not found: ${soundPath}`
+          return `Error: Sound file not found: ${soundFile}`
         },
       },
 
       sfx_create_theme: {
-        description: "Create a new SFX sound theme. Provide all the sound selections as parameters. Use sfx_list_sounds first to see available files.",
+        description: "Create a new SFX sound theme. For an interactive wizard with sound previews, tell the user to run `opencode-sfx create` in their terminal. To create a theme programmatically, provide all the sound selections as parameters. Use sfx_list_sounds first to see available files.",
         parameters: {
           type: "object",
           properties: {
@@ -805,7 +876,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           }
           
           // Validate sound files exist
-          const validateSound = (file: string) => existsSync(join(SOUNDS_DIR, file))
+          const validateSound = (file: string) => resolveSoundPath(file) !== null
           
           if (!validateSound(announceSound)) {
             return `Error: Announce sound not found: ${announceSound}`
@@ -840,8 +911,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           ].join("\n")
           
           // Determine themes directory
-          const pluginDir = new URL(".", import.meta.url).pathname
-          const themesDir = join(pluginDir, "themes")
+          const themesDir = join(PLUGIN_DIR, "themes")
           const themeFile = join(themesDir, `${themeKey}.yaml`)
           
           // Write the theme file
@@ -879,29 +949,59 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         },
         execute: async ({ directory, filter }: { directory?: string; filter?: string }) => {
           const soundsDir = directory || SOUNDS_DIR
+          const lines: string[] = []
+          let totalFiles = 0
           
-          if (!existsSync(soundsDir)) {
-            return `Error: Directory not found: ${soundsDir}`
+          // List files from the user's sounds directory
+          if (existsSync(soundsDir)) {
+            let files = readdirSync(soundsDir)
+              .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
+              .sort()
+            
+            if (filter) {
+              const lowerFilter = filter.toLowerCase()
+              files = files.filter(f => f.toLowerCase().includes(lowerFilter))
+            }
+            
+            if (files.length > 0) {
+              lines.push(`Sound files in ${soundsDir}:`, "")
+              files.forEach((f, i) => {
+                lines.push(`  ${(i + 1).toString().padStart(3)}. ${f}`)
+              })
+              totalFiles += files.length
+            }
+          }
+
+          // Also list bundled sounds (if different from user dir)
+          if (existsSync(BUNDLED_SOUNDS_DIR) && BUNDLED_SOUNDS_DIR !== soundsDir) {
+            const bundledDirs = readdirSync(BUNDLED_SOUNDS_DIR, { withFileTypes: true })
+            for (const entry of bundledDirs) {
+              if (entry.isDirectory()) {
+                const subDir = join(BUNDLED_SOUNDS_DIR, entry.name)
+                let files = readdirSync(subDir)
+                  .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
+                  .sort()
+                if (filter) {
+                  const lowerFilter = filter.toLowerCase()
+                  files = files.filter(f => f.toLowerCase().includes(lowerFilter))
+                }
+                if (files.length > 0) {
+                  if (lines.length > 0) lines.push("")
+                  lines.push(`Bundled sounds (${entry.name}):`, "")
+                  files.forEach((f, i) => {
+                    lines.push(`  ${(totalFiles + i + 1).toString().padStart(3)}. ${entry.name}/${f}`)
+                  })
+                  totalFiles += files.length
+                }
+              }
+            }
+          }
+
+          if (totalFiles === 0) {
+            return `No sound files found${filter ? ` (filter: ${filter})` : ""}`
           }
           
-          let files = readdirSync(soundsDir)
-            .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
-            .sort()
-          
-          if (filter) {
-            const lowerFilter = filter.toLowerCase()
-            files = files.filter(f => f.toLowerCase().includes(lowerFilter))
-          }
-          
-          if (files.length === 0) {
-            return `No sound files found in: ${soundsDir}${filter ? ` (filter: ${filter})` : ""}`
-          }
-          
-          const lines = [`Sound files in ${soundsDir}:`, ""]
-          files.forEach((f, i) => {
-            lines.push(`  ${(i + 1).toString().padStart(3)}. ${f}`)
-          })
-          lines.push("", `Total: ${files.length} files`)
+          lines.push("", `Total: ${totalFiles} files`)
           return lines.join("\n")
         },
       },
@@ -927,11 +1027,16 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             return "Error: filename parameter is required"
           }
           
-          const soundsDir = directory || SOUNDS_DIR
-          const soundPath = join(soundsDir, filename)
+          let soundPath: string | null = null
+          if (directory) {
+            const dirPath = join(directory, filename)
+            if (existsSync(dirPath)) soundPath = dirPath
+          } else {
+            soundPath = resolveSoundPath(filename)
+          }
           
-          if (!existsSync(soundPath)) {
-            return `Error: Sound file not found: ${soundPath}`
+          if (!soundPath) {
+            return `Error: Sound file not found: ${filename}`
           }
           
           playSoundAlways(soundPath, "preview", "user requested preview")
@@ -950,28 +1055,26 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
 
       const eventType = event.type as string
 
+      // Extract sessionID from events that carry it — used for sub-agent filtering
+      const sessionID = (event as any).properties?.sessionID as string | undefined
+
       if (eventType === "session.idle") {
-        // Check if this is a sub-agent session (has parentID) - skip sounds for sub-agents
-        const sessionID = (event as any).properties?.sessionID as string | undefined
-        if (sessionID) {
-          try {
-            const session = await (client.session.get as any)({
-              sessionID,
-              directory: process.cwd(),
-            })
-            if (session.data?.parentID) {
-              // This is a sub-agent session, skip the idle sound
-              return
-            }
-          } catch {
-            // If we can't fetch session info, default to playing sound
-          }
+        // Skip sounds for sub-agent sessions (they have a parentID)
+        if (sessionID && await isSubagentSession(sessionID)) {
+          return
         }
         soundFile = randomSound(currentTheme.sounds.idle)
       } else if (eventType === "permission.asked") {
-        // Play a random question sound for this theme
+        // Skip sounds for sub-agent sessions
+        if (sessionID && await isSubagentSession(sessionID)) {
+          return
+        }
         soundFile = randomSound(currentTheme.sounds.question)
       } else if (eventType === "session.error") {
+        // Skip sounds for sub-agent sessions
+        if (sessionID && await isSubagentSession(sessionID)) {
+          return
+        }
         soundFile = randomSound(currentTheme.sounds.error)
       } else if (eventType === "tui.command.execute" || eventType === "message.created") {
         // User is interacting with this window - clear any stale alert
@@ -980,8 +1083,8 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       }
 
       if (soundFile) {
-        const soundPath = join(SOUNDS_DIR, soundFile)
-        if (existsSync(soundPath)) {
+        const soundPath = resolveSoundPath(soundFile)
+        if (soundPath) {
           playSound(soundPath, eventType)
         }
       }
@@ -994,10 +1097,14 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       }
 
       if (input.tool === "mcp_question" || input.tool === "question") {
+        // Skip sounds for sub-agent sessions
+        if (input.sessionID && await isSubagentSession(input.sessionID)) {
+          return
+        }
         const questionFile = randomSound(currentTheme.sounds.question)
         if (questionFile) {
-          const soundPath = join(SOUNDS_DIR, questionFile)
-          if (existsSync(soundPath)) {
+          const soundPath = resolveSoundPath(questionFile)
+          if (soundPath) {
             playSound(soundPath, "tool.question", "question tool invoked")
           }
         }
