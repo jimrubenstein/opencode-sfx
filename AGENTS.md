@@ -64,3 +64,5 @@ The user must restart their AI coding agent after installation.
 After the user restarts their agent, a startup chime should play. In OpenCode, the user can run `/sfx test` to verify.
 
 To create a custom sound theme, the user can run `opencode-sfx create` in their terminal for an interactive wizard.
+
+To install a theme pack from a URL or local zip file, the user can run `opencode-sfx install <url-or-path>`, then `/sfx reload` to pick it up.

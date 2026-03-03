@@ -2,7 +2,7 @@
 
 Sound effects for AI coding agents. Get audio notifications when your agent finishes a task, needs your input, or hits an error — so you can context-switch without constantly checking your terminal.
 
-Works out of the box with built-in notification sounds. Ships with 15 StarCraft-themed sound packs if you bring your own audio files.
+Works out of the box with built-in notification sounds. Install additional theme packs for more personality.
 
 ### Supported clients
 
@@ -52,39 +52,25 @@ Sounds only play when **you're not looking at the terminal** (focus detection fo
 
 ## Themes
 
-A "default" theme with simple notification tones is included. No setup needed.
+A "default" theme with simple notification tones is included and works out of the box.
 
-For more personality, the plugin ships with 15 StarCraft-themed sound packs:
+### Installing Theme Packs
 
-| Theme | Unit |
-|-------|------|
-| `marine` | Terran infantry |
-| `ghost` | Psionic operative |
-| `siege-tank` | Arclite siege tank |
-| `battlecruiser` | Capital ship |
-| `wraith` | Terran starfighter |
-| `scv` | Construction vehicle |
-| `firebat` | Flame trooper |
-| `goliath` | Assault walker |
-| `vulture` | Hoverbike rider |
-| `dropship` | Transport pilot |
-| `science-vessel` | Research vessel |
-| `advisor` | Base announcements |
-| `raynor` | Jim Raynor |
-| `kerrigan` | Sarah Kerrigan |
-| `duke` | General Duke |
+Theme packs are archives containing a theme definition and sound files. Install them with the CLI:
 
-Each OpenCode instance gets a random theme. Multiple instances avoid picking the same one.
+```bash
+# From a URL (one-liner)
+opencode-sfx install https://github.com/jimrubenstein/ocsfx-packs/raw/main/starcraft/marine.tgz
 
-### Using StarCraft Themes
+# From a local file
+opencode-sfx install ~/Downloads/marine.tgz
+```
 
-StarCraft sound files are not included (copyright). To use them:
+Browse available theme packs at [ocsfx-packs](https://github.com/jimrubenstein/ocsfx-packs).
 
-1. Source your own StarCraft MP3 files (soundboard sites, game rips, etc.)
-2. Place them in `~/sounds/starcraft/mp3_trimmed/` (or set `OCSFX_SOUNDS_PATH`)
-3. Filenames must match those in the `themes/*.yaml` files
+The installer extracts the theme YAML and sound files into the correct locations, then clears the theme cache. Run `/sfx reload` in your AI coding agent to pick up the new theme.
 
-Once the sounds are in place, the plugin automatically rotates through StarCraft themes instead of using the default.
+Multiple instances avoid picking the same theme. Use `/sfx change` to switch, or `/sfx change` with no argument to randomly pick a different one.
 
 ### Creating Custom Themes
 
@@ -103,22 +89,37 @@ name: My Theme
 description: A custom sound theme
 
 sounds:
-  announce: startup_sound.mp3
-  question: waiting_for_input.mp3
+  announce: mytheme/startup_sound.mp3
+  question: mytheme/waiting_for_input.mp3
   idle:
-    - task_complete_1.mp3
-    - task_complete_2.mp3
+    - mytheme/task_complete_1.mp3
+    - mytheme/task_complete_2.mp3
   error:
-    - error_sound.mp3
+    - mytheme/error_sound.mp3
 ```
+
+Place the sound files in `sounds/mytheme/` inside the plugin directory.
+
+### Theme Pack Format
+
+A theme pack is a `.tgz` or `.zip` archive with this structure:
+
+```
+themes/<key>.yaml     Theme definition
+sounds/*.mp3          Sound files
+INSTALL.md            Install instructions (optional)
+```
+
+The `opencode-sfx install` command handles downloading, extracting, placing sounds in `sounds/<theme-key>/`, rewriting the YAML references, and clearing the cache.
 
 ## CLI
 
 The `opencode-sfx` command is available after installation:
 
 ```
-opencode-sfx create    Interactive theme creation wizard
-opencode-sfx help      Show help
+opencode-sfx create              Interactive theme creation wizard
+opencode-sfx install <source>    Install a theme pack from URL or local zip
+opencode-sfx help                Show help
 ```
 
 ## In-Session Commands
@@ -129,7 +130,7 @@ The `/sfx` command manages themes from inside OpenCode:
 /sfx                  Show help and current theme
 /sfx list             List all available themes
 /sfx view [theme]     View theme details
-/sfx change <theme>   Switch to a different theme
+/sfx change [theme]   Switch theme (random if no theme specified)
 /sfx reload           Reload themes from YAML files
 /sfx test             Play the current theme's announce sound
 /sfx sounds [filter]  List sound files
@@ -142,7 +143,7 @@ The `/sfx` command manages themes from inside OpenCode:
 
 | Variable | Description |
 |----------|-------------|
-| `OCSFX_THEME` | Force a specific theme (e.g., `marine`) |
+| `OCSFX_THEME` | Force a specific theme |
 | `OCSFX_SOUNDS_PATH` | Custom path to sound files directory |
 | `OCSFX_ALERT` | Custom tmux alert prefix (default: `!! `) |
 

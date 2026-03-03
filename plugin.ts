@@ -757,20 +757,28 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       },
 
       sfx_change_theme: {
-        description: "Switch to a different sound theme. Call with theme parameter set to the theme key (e.g., 'marine', 'ghost', 'comedy-annoyed').",
+        description: "Switch to a different sound theme. Call with theme parameter set to the theme key (e.g., 'marine', 'ghost'). If no theme is specified, randomly picks a different theme than the current one.",
         parameters: {
           type: "object",
           properties: {
             theme: {
               type: "string",
-              description: "Theme key to switch to (e.g., 'marine', 'ghost')",
+              description: "Theme key to switch to. If omitted, a random different theme is selected.",
             },
           },
-          required: ["theme"],
         },
-        execute: async ({ theme: themeKey }: { theme: string }) => {
+        execute: async ({ theme: themeKey }: { theme?: string }) => {
           if (!themeKey) {
-            return `Error: 'theme' parameter is required. Available themes: ${Object.keys(themes).join(", ")}`
+            // Random switch: pick a different theme than the current one
+            themes = loadThemes()
+            themeNames = Object.keys(themes).sort()
+            const candidates = themeNames.filter(t => t !== currentThemeKey && t !== "test")
+            if (candidates.length === 0) {
+              return "No other themes available to switch to."
+            }
+            const randomKey = candidates[Math.floor(Math.random() * candidates.length)]
+            const result = switchTheme(randomKey)
+            return result.message
           }
           const result = switchTheme(themeKey)
           return result.message
