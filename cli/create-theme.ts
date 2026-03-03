@@ -8,23 +8,27 @@
  */
 
 import { intro, outro, text, select, multiselect, confirm, log, isCancel, cancel } from "@clack/prompts"
-import { readdirSync, existsSync, writeFileSync, unlinkSync } from "fs"
-import { join, dirname, extname } from "path"
-import { fileURLToPath } from "url"
+import { readdirSync, existsSync, writeFileSync, mkdirSync, unlinkSync } from "fs"
+import { join, extname } from "path"
 import { spawn } from "child_process"
-import { homedir } from "os"
+import {
+  PLUGIN_DIR,
+  USER_THEMES_DIR,
+  BUNDLED_THEMES_DIR,
+  CACHE_FILE,
+} from "../lib/paths.js"
 
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
 
-const CLI_DIR = dirname(fileURLToPath(import.meta.url))
-const PLUGIN_DIR = dirname(CLI_DIR)
-const THEMES_DIR = join(PLUGIN_DIR, "themes")
-const BUNDLED_SOUNDS_DIR = join(PLUGIN_DIR, "sounds")
-const DEFAULT_SOUNDS_DIR = join(homedir(), "sounds/starcraft/mp3_trimmed")
-const SOUNDS_DIR = process.env.OCSFX_SOUNDS_PATH || DEFAULT_SOUNDS_DIR
 const PLAY_SOUND_SCRIPT = join(PLUGIN_DIR, "bin", "play-sound")
+
+/**
+ * Theme root directories to search for sounds, in priority order.
+ * Each contains theme subdirectories: <root>/<name>/{yaml, sounds}.
+ */
+const THEME_ROOTS = [USER_THEMES_DIR, BUNDLED_THEMES_DIR]
 
 const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".ogg", ".m4a", ".aac"])
 
@@ -33,62 +37,53 @@ const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".ogg", ".m4a", ".aac"])
 // ---------------------------------------------------------------------------
 
 interface SoundFile {
-  /** Display label (relative path for bundled, filename for user) */
+  /** Display label */
   label: string
-  /** Filename as it would appear in the YAML (relative to sounds dir) */
+  /** Filename as it would appear in the YAML (bare filename — sibling to the YAML) */
   yamlRef: string
   /** Full absolute path for playback */
   absPath: string
+  /** Which theme this sound belongs to */
+  themeKey: string
   /** Which source: "user" or "bundled" */
   source: "user" | "bundled"
 }
 
+/**
+ * Discover audio files across all theme directories.
+ * Since each theme is self-contained, sounds live alongside the YAML.
+ */
 function discoverSounds(): SoundFile[] {
   const sounds: SoundFile[] = []
 
-  // User sounds (flat directory)
-  if (existsSync(SOUNDS_DIR)) {
-    try {
-      const files = readdirSync(SOUNDS_DIR)
-        .filter(f => AUDIO_EXTENSIONS.has(extname(f).toLowerCase()))
-        .sort()
-      for (const f of files) {
-        sounds.push({
-          label: f,
-          yamlRef: f,
-          absPath: join(SOUNDS_DIR, f),
-          source: "user",
-        })
-      }
-    } catch {
-      // ignore read errors
-    }
-  }
+  for (const root of THEME_ROOTS) {
+    if (!existsSync(root)) continue
+    const source: "user" | "bundled" = root === USER_THEMES_DIR ? "user" : "bundled"
+    const labelSuffix = source === "bundled" ? " (bundled)" : ""
 
-  // Bundled sounds (subdirectories like sounds/default/)
-  if (existsSync(BUNDLED_SOUNDS_DIR)) {
     try {
-      const entries = readdirSync(BUNDLED_SOUNDS_DIR, { withFileTypes: true })
-      for (const entry of entries) {
-        if (entry.isDirectory()) {
-          const subDir = join(BUNDLED_SOUNDS_DIR, entry.name)
-          const files = readdirSync(subDir)
+      const themeDirs = readdirSync(root, { withFileTypes: true })
+      for (const entry of themeDirs) {
+        if (!entry.isDirectory()) continue
+        const themeDir = join(root, entry.name)
+        const themeKey = entry.name
+
+        try {
+          const files = readdirSync(themeDir)
             .filter(f => AUDIO_EXTENSIONS.has(extname(f).toLowerCase()))
             .sort()
           for (const f of files) {
-            const relPath = `${entry.name}/${f}`
             sounds.push({
-              label: `${relPath} (bundled)`,
-              yamlRef: relPath,
-              absPath: join(subDir, f),
-              source: "bundled",
+              label: `${themeKey}/${f}${labelSuffix}`,
+              yamlRef: f,
+              absPath: join(themeDir, f),
+              themeKey,
+              source,
             })
           }
-        }
+        } catch { /* ignore read errors */ }
       }
-    } catch {
-      // ignore read errors
-    }
+    } catch { /* ignore root read errors */ }
   }
 
   return sounds
@@ -132,7 +127,7 @@ type SoundOption = { value: string; label: string; hint?: string }
 function buildSoundOptions(sounds: SoundFile[]): SoundOption[] {
   return sounds.map(s => ({
     value: s.yamlRef,
-    label: s.yamlRef,
+    label: s.label,
     hint: s.source === "bundled" ? "bundled" : undefined,
   }))
 }
@@ -229,15 +224,16 @@ function generateYaml(
 export async function createThemeWizard(): Promise<void> {
   intro("Create a new OpenCode SFX theme")
 
-  // Discover available sounds
+  // Discover available sounds from all theme directories
   const sounds = discoverSounds()
 
   if (sounds.length === 0) {
     log.error(
       "No sound files found!\n\n" +
-      `  Checked: ${SOUNDS_DIR}\n` +
-      `  Checked: ${BUNDLED_SOUNDS_DIR}\n\n` +
-      "  Place audio files (.mp3, .wav, .ogg) in one of these directories."
+      `  Checked: ${USER_THEMES_DIR}\n` +
+      `  Checked: ${BUNDLED_THEMES_DIR}\n\n` +
+      "  Place audio files (.mp3, .wav, .ogg) in a theme directory:\n" +
+      "    ~/.ocsfx/themes/<name>/<sounds>.mp3"
     )
     process.exit(1)
   }
@@ -246,8 +242,8 @@ export async function createThemeWizard(): Promise<void> {
 
   const userCount = sounds.filter(s => s.source === "user").length
   const bundledCount = sounds.filter(s => s.source === "bundled").length
-  if (userCount > 0) log.info(`  ${userCount} from ${SOUNDS_DIR}`)
-  if (bundledCount > 0) log.info(`  ${bundledCount} bundled with plugin`)
+  if (userCount > 0) log.info(`  ${userCount} from user themes`)
+  if (bundledCount > 0) log.info(`  ${bundledCount} from bundled themes`)
 
   // --- Theme name ---
   const themeName = await text({
@@ -260,14 +256,14 @@ export async function createThemeWizard(): Promise<void> {
   })
   handleCancel(themeName)
 
-  // --- Theme key (filename) ---
+  // --- Theme key (directory name) ---
   const defaultKey = (themeName as string)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
 
   const themeKey = await text({
-    message: "Theme key (used as filename)",
+    message: "Theme key (used as directory name)",
     placeholder: defaultKey,
     defaultValue: defaultKey,
     validate: (value) => {
@@ -275,7 +271,8 @@ export async function createThemeWizard(): Promise<void> {
       if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(value)) {
         return "Use lowercase letters, numbers, and hyphens only"
       }
-      if (existsSync(join(THEMES_DIR, `${value}.yaml`))) {
+      // Check if theme directory already exists in user or bundled
+      if (existsSync(join(USER_THEMES_DIR, value)) || existsSync(join(BUNDLED_THEMES_DIR, value))) {
         return `Theme "${value}" already exists`
       }
       return undefined
@@ -326,7 +323,7 @@ export async function createThemeWizard(): Promise<void> {
   log.info(`  Error:    ${error.join(", ")}`)
 
   const shouldWrite = await confirm({
-    message: `Write theme to themes/${finalKey}.yaml?`,
+    message: `Write theme to ~/.ocsfx/themes/${finalKey}/${finalKey}.yaml?`,
   })
   handleCancel(shouldWrite)
 
@@ -338,16 +335,19 @@ export async function createThemeWizard(): Promise<void> {
   // --- Write YAML ---
   const yaml = generateYaml(finalName, finalDesc, announce, question, idle, error)
 
-  const outputPath = join(THEMES_DIR, `${finalKey}.yaml`)
+  // Create self-contained theme directory
+  const themeDir = join(USER_THEMES_DIR, finalKey)
+  mkdirSync(themeDir, { recursive: true })
+
+  const outputPath = join(themeDir, `${finalKey}.yaml`)
   writeFileSync(outputPath, yaml)
 
   log.success(`Created ${outputPath}`)
 
   // Clear the theme cache so it's picked up immediately
-  const cacheFile = join(PLUGIN_DIR, ".cache", "themes.json")
-  if (existsSync(cacheFile)) {
+  if (existsSync(CACHE_FILE)) {
     try {
-      unlinkSync(cacheFile)
+      unlinkSync(CACHE_FILE)
       log.info("Theme cache cleared — new theme available immediately")
     } catch {
       log.warn("Could not clear theme cache. Run /sfx reload in OpenCode.")

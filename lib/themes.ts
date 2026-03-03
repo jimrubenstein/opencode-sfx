@@ -1,6 +1,12 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, mkdirSync } from "fs"
-import { join, basename } from "path"
+import { join, basename, dirname } from "path"
 import { parse as parseYaml } from "yaml"
+import {
+  USER_THEMES_DIR,
+  BUNDLED_THEMES_DIR,
+  CACHE_DIR,
+  CACHE_FILE,
+} from "./paths.js"
 
 // =============================================================================
 // TYPES
@@ -9,6 +15,8 @@ import { parse as parseYaml } from "yaml"
 export interface SoundTheme {
   name: string
   description: string
+  /** Absolute path to the directory containing this theme's YAML and sounds */
+  basePath: string
   sounds: {
     announce: string[]
     question: string[]
@@ -26,14 +34,30 @@ interface ThemeCache {
 }
 
 // =============================================================================
-// PATHS
+// CONSTANTS
 // =============================================================================
 
-const CACHE_VERSION = 1
-const PLUGIN_DIR = new URL("..", import.meta.url).pathname
-const THEMES_DIR = join(PLUGIN_DIR, "themes")
-const CACHE_DIR = join(PLUGIN_DIR, ".cache")
-const CACHE_FILE = join(CACHE_DIR, "themes.json")
+const CACHE_VERSION = 2  // bumped: new self-contained directory structure
+
+/**
+ * Directories to search for theme subdirectories, in priority order.
+ * User themes (~/.ocsfx/themes/) take precedence over bundled themes.
+ */
+const THEME_ROOTS = [USER_THEMES_DIR, BUNDLED_THEMES_DIR]
+
+// =============================================================================
+// SOUND RESOLUTION
+// =============================================================================
+
+/**
+ * Resolve a sound filename to an absolute path, relative to a theme's directory.
+ * Returns null if the file doesn't exist.
+ */
+export function resolveSoundPath(theme: SoundTheme, soundFile: string): string | null {
+  const candidate = join(theme.basePath, soundFile)
+  if (existsSync(candidate)) return candidate
+  return null
+}
 
 // =============================================================================
 // CACHE MANAGEMENT
@@ -41,18 +65,27 @@ const CACHE_FILE = join(CACHE_DIR, "themes.json")
 
 function getThemesModTime(): number {
   let maxMtime = 0
-  try {
-    const files = readdirSync(THEMES_DIR)
-    for (const file of files) {
-      if (file.endsWith(".yaml") || file.endsWith(".yml")) {
-        const stat = statSync(join(THEMES_DIR, file))
-        if (stat.mtimeMs > maxMtime) {
-          maxMtime = stat.mtimeMs
-        }
+  for (const root of THEME_ROOTS) {
+    try {
+      const entries = readdirSync(root, { withFileTypes: true })
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue
+        const themeDir = join(root, entry.name)
+        try {
+          const files = readdirSync(themeDir)
+          for (const file of files) {
+            if (file.endsWith(".yaml") || file.endsWith(".yml")) {
+              const stat = statSync(join(themeDir, file))
+              if (stat.mtimeMs > maxMtime) {
+                maxMtime = stat.mtimeMs
+              }
+            }
+          }
+        } catch { /* skip unreadable dirs */ }
       }
+    } catch {
+      // Root directory might not exist
     }
-  } catch {
-    // Directory might not exist
   }
   return maxMtime
 }
@@ -117,8 +150,8 @@ function loadThemeFromYaml(filePath: string): SoundTheme | null {
     return {
       name: data.name,
       description: data.description || "",
+      basePath: dirname(filePath),
       sounds: {
-        // Normalize all sound types to arrays (supports both string and array in YAML)
         announce: normalizeToArray(data.sounds.announce),
         question: normalizeToArray(data.sounds.question),
         idle: normalizeToArray(data.sounds.idle),
@@ -131,29 +164,72 @@ function loadThemeFromYaml(filePath: string): SoundTheme | null {
   }
 }
 
+/**
+ * Discover and load themes from a single root directory.
+ *
+ * Expected structure:
+ *   <root>/<name>/<name>.yaml   (preferred)
+ *   <root>/<name>/*.yaml        (fallback: first yaml found)
+ */
+function discoverThemesInRoot(root: string): ThemeMap {
+  const themes: ThemeMap = {}
+  if (!existsSync(root)) return themes
+
+  try {
+    const entries = readdirSync(root, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+
+      const themeDir = join(root, entry.name)
+      const key = entry.name
+
+      // Prefer <name>.yaml matching the directory name
+      let yamlPath = join(themeDir, `${key}.yaml`)
+      if (!existsSync(yamlPath)) {
+        yamlPath = join(themeDir, `${key}.yml`)
+      }
+
+      // Fallback: first .yaml file in the directory
+      if (!existsSync(yamlPath)) {
+        try {
+          const files = readdirSync(themeDir)
+          const yamlFile = files.find(f => f.endsWith(".yaml") || f.endsWith(".yml"))
+          if (yamlFile) {
+            yamlPath = join(themeDir, yamlFile)
+          } else {
+            continue // No YAML found, skip this directory
+          }
+        } catch {
+          continue
+        }
+      }
+
+      const theme = loadThemeFromYaml(yamlPath)
+      if (theme) {
+        themes[key] = theme
+      }
+    }
+  } catch {
+    // Root directory read error — skip
+  }
+
+  return themes
+}
+
+/**
+ * Load all themes from all theme root directories.
+ * User themes take precedence: if the same key exists in both
+ * ~/.ocsfx/themes/ and <plugin>/themes/, the user version wins.
+ */
 function loadAllThemesFromYaml(): ThemeMap {
   const themes: ThemeMap = {}
-  
-  if (!existsSync(THEMES_DIR)) {
-    console.error(`Themes directory not found: ${THEMES_DIR}`)
-    return themes
+
+  // Load bundled themes first, then user themes overwrite
+  for (let i = THEME_ROOTS.length - 1; i >= 0; i--) {
+    const rootThemes = discoverThemesInRoot(THEME_ROOTS[i])
+    Object.assign(themes, rootThemes)
   }
-  
-  const files = readdirSync(THEMES_DIR)
-  for (const file of files) {
-    if (!file.endsWith(".yaml") && !file.endsWith(".yml")) {
-      continue
-    }
-    
-    const filePath = join(THEMES_DIR, file)
-    const theme = loadThemeFromYaml(filePath)
-    if (theme) {
-      // Use filename (without extension) as the theme key
-      const key = basename(file, file.endsWith(".yaml") ? ".yaml" : ".yml")
-      themes[key] = theme
-    }
-  }
-  
+
   return themes
 }
 
@@ -165,8 +241,10 @@ let cachedThemes: ThemeMap | null = null
 
 /**
  * Load all themes, using cache if available and up-to-date.
- * Themes are loaded from YAML files in the themes/ directory.
- * A JSON cache is maintained in .cache/themes.json for faster subsequent loads.
+ * Themes are discovered as self-contained directories:
+ *   <root>/<name>/<name>.yaml + sound files
+ *
+ * Search order: ~/.ocsfx/themes/ first, then <plugin>/themes/.
  */
 export function loadThemes(): ThemeMap {
   // Return in-memory cache if available
@@ -179,7 +257,6 @@ export function loadThemes(): ThemeMap {
   const themesModTime = getThemesModTime()
   
   if (cache && cache.buildTime > themesModTime) {
-    // Cache is newer than theme files, use it
     cachedThemes = cache.themes
     return cachedThemes
   }

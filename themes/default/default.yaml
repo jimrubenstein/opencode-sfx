@@ -1,0 +1,13 @@
+name: Default
+description: Simple notification tones (bundled with the plugin)
+
+sounds:
+  announce: announce.mp3
+  question: question.mp3
+  idle:
+    - idle1.mp3
+    - idle2.mp3
+    - idle3.mp3
+  error:
+    - error1.mp3
+    - error2.mp3

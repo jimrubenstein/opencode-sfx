@@ -4,18 +4,18 @@ node_modules/
 # Build cache
 .cache/
 
-# Sound files (user-provided or installed via theme packs, not distributed)
-# The sounds/default/ directory IS tracked (bundled synthetic notification tones)
-sounds/*
-!sounds/default/
-*.wav
-*.ogg
-
-# Theme packs installed locally (not distributed — install via opencode-sfx install)
-# Only default.yaml and test.yaml are tracked in the repo
+# Themes: each theme is a self-contained directory themes/<name>/
+# Only the bundled "default" and "test" themes are tracked in the repo.
+# User-installed themes live in ~/.ocsfx/themes/ (not here).
 themes/*
-!themes/default.yaml
-!themes/test.yaml
+!themes/default/
+!themes/test/
+
+# Legacy sounds directory (no longer used — sounds live inside theme dirs)
+sounds/
+
+# Build scripts (developer-only, not distributed)
+scripts/
 
 # Test sound fixtures (mock files, not real audio)
 test/sounds/

@@ -24,7 +24,6 @@
 #
 # Environment:
 #   OCSFX_THEME         Force a specific theme
-#   OCSFX_SOUNDS_PATH   Custom path to sound files directory
 #   OCSFX_ALERT         Tmux alert prefix (default: "!! ")
 #   OCSFX_DEBUG          1 = debug logging, test = log without playing
 #   OCSFX_LOG_FILE       Write logs to this file
@@ -43,10 +42,14 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-THEMES_DIR="$PLUGIN_DIR/themes"
-BUNDLED_SOUNDS_DIR="$PLUGIN_DIR/sounds"
-DEFAULT_SOUNDS_DIR="$HOME/sounds/starcraft/mp3_trimmed"
-SOUNDS_DIR="${OCSFX_SOUNDS_PATH:-$DEFAULT_SOUNDS_DIR}"
+
+# User themes (~/.ocsfx/themes/) — searched first
+USER_DIR="$HOME/.ocsfx"
+USER_THEMES_DIR="$USER_DIR/themes"
+
+# Bundled themes (plugin install) — searched second
+BUNDLED_THEMES_DIR="$PLUGIN_DIR/themes"
+
 PLAY_SOUND="$SCRIPT_DIR/play-sound"
 
 STATE_DIR="$HOME/.config/opencode/.opencode-sfx"
@@ -178,6 +181,25 @@ get_theme_sounds() {
   done < "$theme_file"
 }
 
+# Find a theme's YAML file. Themes are self-contained directories:
+#   <root>/<name>/<name>.yaml
+# Searches user themes first, then bundled themes.
+find_theme_file() {
+  local theme="$1"
+
+  # User themes first
+  if [[ -f "$USER_THEMES_DIR/$theme/$theme.yaml" ]]; then
+    echo "$USER_THEMES_DIR/$theme/$theme.yaml"
+    return 0
+  fi
+  # Bundled themes second
+  if [[ -f "$BUNDLED_THEMES_DIR/$theme/$theme.yaml" ]]; then
+    echo "$BUNDLED_THEMES_DIR/$theme/$theme.yaml"
+    return 0
+  fi
+  return 1
+}
+
 # Determine which theme to use. Priority:
 # 1. --theme flag
 # 2. OCSFX_THEME env var
@@ -198,44 +220,43 @@ resolve_theme() {
   fi
 
   # Validate theme exists
-  if [[ -n "$theme" && -f "$THEMES_DIR/$theme.yaml" ]]; then
+  if [[ -n "$theme" ]] && find_theme_file "$theme" > /dev/null; then
     echo "$theme"
     return 0
   fi
 
-  # 4. Fall back to "default" if available, otherwise first theme found
-  if [[ -f "$THEMES_DIR/default.yaml" ]]; then
+  # 4. Fall back to "default" if available
+  if find_theme_file "default" > /dev/null; then
     echo "default"
     return 0
   fi
 
-  # Pick first available theme (excluding test)
-  for f in "$THEMES_DIR"/*.yaml; do
-    local name
-    name="$(basename "$f" .yaml)"
-    if [[ "$name" != "test" ]]; then
-      echo "$name"
-      return 0
-    fi
+  # Pick first available theme directory (excluding test)
+  for dir in "$USER_THEMES_DIR" "$BUNDLED_THEMES_DIR"; do
+    [[ -d "$dir" ]] || continue
+    for theme_dir in "$dir"/*/; do
+      [[ -d "$theme_dir" ]] || continue
+      local name
+      name="$(basename "$theme_dir")"
+      if [[ "$name" != "test" && -f "$theme_dir/$name.yaml" ]]; then
+        echo "$name"
+        return 0
+      fi
+    done
   done
 
   return 1
 }
 
 # Resolve a sound filename to an absolute path.
-# Checks user sounds dir first, then bundled sounds.
+# Sounds live alongside the theme YAML in the same directory.
 resolve_sound_path() {
   local filename="$1"
+  local theme_dir="$2"  # directory containing the theme YAML
 
-  local user_path="$SOUNDS_DIR/$filename"
-  if [[ -f "$user_path" ]]; then
-    echo "$user_path"
-    return 0
-  fi
-
-  local bundled_path="$BUNDLED_SOUNDS_DIR/$filename"
-  if [[ -f "$bundled_path" ]]; then
-    echo "$bundled_path"
+  local sound_path="$theme_dir/$filename"
+  if [[ -f "$sound_path" ]]; then
+    echo "$sound_path"
     return 0
   fi
 
@@ -306,11 +327,12 @@ set_tmux_alert() {
 
 # Resolve theme
 THEME=$(resolve_theme) || {
-  log_debug "ERROR No themes found in $THEMES_DIR"
+  log_debug "ERROR No themes found in $USER_THEMES_DIR or $BUNDLED_THEMES_DIR"
   exit 3
 }
 
-THEME_FILE="$THEMES_DIR/$THEME.yaml"
+THEME_FILE=$(find_theme_file "$THEME")
+THEME_DIR="$(dirname "$THEME_FILE")"
 
 log_debug "RESOLVE theme=$THEME category=$CATEGORY client=${CLIENT:-shell} event=${EVENT:-$CATEGORY}"
 
@@ -328,9 +350,9 @@ SOUND_FILE=$(echo "$SOUNDS" | pick_random) || {
   exit 2
 }
 
-# Resolve to absolute path
-SOUND_PATH=$(resolve_sound_path "$SOUND_FILE") || {
-  log_debug "SKIP Sound file not found: $SOUND_FILE"
+# Resolve to absolute path (relative to theme directory)
+SOUND_PATH=$(resolve_sound_path "$SOUND_FILE" "$THEME_DIR") || {
+  log_debug "SKIP Sound file not found: $SOUND_FILE in $THEME_DIR"
   exit 2
 }
 

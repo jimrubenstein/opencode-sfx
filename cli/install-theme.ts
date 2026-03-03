@@ -1,19 +1,17 @@
 /**
  * Theme pack installer for OpenCode SFX.
  *
- * Installs a theme pack from a local zip file or a URL.
+ * Installs a theme pack from a local archive or a URL.
  * Theme packs contain:
  *   - themes/<key>.yaml  — theme definition
  *   - sounds/*.mp3       — sound files
  *   - INSTALL.md         — (optional) install instructions
  *
  * The installer:
- *   1. Downloads the zip (if URL) or reads from local path
+ *   1. Downloads the archive (if URL) or reads from local path
  *   2. Extracts to a temp directory
- *   3. Copies the theme YAML to the plugin's themes/ directory
- *   4. Copies sounds to the plugin's sounds/<theme-key>/ directory
- *   5. Rewrites sound references in the YAML to use the <theme-key>/ prefix
- *   6. Clears the theme cache
+ *   3. Creates ~/.ocsfx/themes/<key>/ with the YAML and sounds together
+ *   4. Clears the theme cache
  *
  * Usage: opencode-sfx install <url-or-path>
  */
@@ -23,12 +21,10 @@ import { join, dirname, basename, extname } from "path"
 import { fileURLToPath } from "url"
 import { execSync } from "child_process"
 import { tmpdir } from "os"
-
-const CLI_DIR = dirname(fileURLToPath(import.meta.url))
-const PLUGIN_DIR = dirname(CLI_DIR)
-const THEMES_DIR = join(PLUGIN_DIR, "themes")
-const SOUNDS_DIR = join(PLUGIN_DIR, "sounds")
-const CACHE_FILE = join(PLUGIN_DIR, ".cache", "themes.json")
+import {
+  USER_THEMES_DIR,
+  CACHE_FILE,
+} from "../lib/paths.js"
 
 // Colors
 const GREEN = "\x1b[32m"
@@ -83,87 +79,26 @@ function extractArchive(archivePath: string, destDir: string): void {
   }
 }
 
-/**
- * Rewrite sound references in a theme YAML to use a subdirectory prefix.
- *
- * Transforms bare filenames like "182102_foo.mp3" to "marine/182102_foo.mp3"
- * but leaves already-prefixed paths (like "default/announce.mp3") alone.
- */
-function rewriteYamlSoundPaths(yamlContent: string, prefix: string): string {
-  const lines = yamlContent.split("\n")
-  const rewritten: string[] = []
-
-  let inSounds = false
-
-  for (const line of lines) {
-    if (/^sounds:/.test(line)) {
-      inSounds = true
-      rewritten.push(line)
-      continue
-    }
-
-    if (inSounds && /^\S/.test(line) && line.trim() !== "") {
-      // Left the sounds block
-      inSounds = false
-      rewritten.push(line)
-      continue
-    }
-
-    if (!inSounds) {
-      rewritten.push(line)
-      continue
-    }
-
-    // Inline value: "  key: filename.mp3"
-    const inlineMatch = line.match(/^(\s{2}[a-z]+:\s+)(.+\.mp3.*)$/)
-    if (inlineMatch) {
-      const [, before, filename] = inlineMatch
-      if (!filename.includes("/")) {
-        rewritten.push(`${before}${prefix}/${filename}`)
-      } else {
-        rewritten.push(line)
-      }
-      continue
-    }
-
-    // List item: "    - filename.mp3"
-    const listMatch = line.match(/^(\s{4}-\s+)(.+\.mp3.*)$/)
-    if (listMatch) {
-      const [, before, filename] = listMatch
-      if (!filename.includes("/")) {
-        rewritten.push(`${before}${prefix}/${filename}`)
-      } else {
-        rewritten.push(line)
-      }
-      continue
-    }
-
-    rewritten.push(line)
-  }
-
-  return rewritten.join("\n")
-}
-
 export async function installThemePack(source: string): Promise<void> {
   console.log()
   info("Installing theme pack")
   console.log()
 
-  // --- Step 1: Get the zip file ---
-  let zipPath: string
-  let cleanupZip = false
+  // --- Step 1: Get the archive file ---
+  let archivePath: string
+  let cleanupArchive = false
 
   if (isUrl(source)) {
     step(`Downloading ${source}...`)
-    const tmpZip = join(tmpdir(), `ocsfx-theme-${Date.now()}.zip`)
+    const tmpFile = join(tmpdir(), `ocsfx-theme-${Date.now()}.tgz`)
     try {
-      downloadFile(source, tmpZip)
+      downloadFile(source, tmpFile)
     } catch (e: any) {
       err(e.message)
       process.exit(1)
     }
-    zipPath = tmpZip
-    cleanupZip = true
+    archivePath = tmpFile
+    cleanupArchive = true
     ok("Downloaded")
   } else {
     // Local path
@@ -171,7 +106,7 @@ export async function installThemePack(source: string): Promise<void> {
       err(`File not found: ${source}`)
       process.exit(1)
     }
-    zipPath = source
+    archivePath = source
     ok(`Using local file: ${source}`)
   }
 
@@ -180,20 +115,20 @@ export async function installThemePack(source: string): Promise<void> {
 
   try {
     step("Extracting...")
-    extractArchive(zipPath, extractDir)
+    extractArchive(archivePath, extractDir)
     ok("Extracted")
   } catch (e: any) {
     err(e.message)
-    if (cleanupZip) try { unlinkSync(zipPath) } catch {}
+    if (cleanupArchive) try { unlinkSync(archivePath) } catch {}
     process.exit(1)
   }
 
   // --- Step 3: Find theme YAML ---
   const themesSubDir = join(extractDir, "themes")
   if (!existsSync(themesSubDir)) {
-    err("Invalid theme pack: no themes/ directory found in zip")
+    err("Invalid theme pack: no themes/ directory found in archive")
     rmSync(extractDir, { recursive: true, force: true })
-    if (cleanupZip) try { unlinkSync(zipPath) } catch {}
+    if (cleanupArchive) try { unlinkSync(archivePath) } catch {}
     process.exit(1)
   }
 
@@ -204,53 +139,47 @@ export async function installThemePack(source: string): Promise<void> {
   if (yamlFiles.length === 0) {
     err("Invalid theme pack: no .yaml files found in themes/ directory")
     rmSync(extractDir, { recursive: true, force: true })
-    if (cleanupZip) try { unlinkSync(zipPath) } catch {}
+    if (cleanupArchive) try { unlinkSync(archivePath) } catch {}
     process.exit(1)
   }
 
-  // --- Step 4: Install each theme from the pack ---
+  // --- Step 4: Install each theme into ~/.ocsfx/themes/<name>/ ---
   const soundsSubDir = join(extractDir, "sounds")
   const hasSounds = existsSync(soundsSubDir)
 
   for (const yamlFile of yamlFiles) {
     const themeKey = basename(yamlFile, extname(yamlFile))
     const srcYaml = join(themesSubDir, yamlFile)
-    const destYaml = join(THEMES_DIR, yamlFile)
+
+    // Create self-contained theme directory
+    const destThemeDir = join(USER_THEMES_DIR, themeKey)
+    mkdirSync(destThemeDir, { recursive: true })
 
     step(`Installing theme: ${themeKey}`)
 
-    // Read and rewrite the YAML
-    let yamlContent = readFileSync(srcYaml, "utf-8")
-
-    // Install sounds if present
+    // Copy sounds into the theme directory (alongside the YAML)
     if (hasSounds) {
       const soundFiles = readdirSync(soundsSubDir).filter(f =>
         /\.(mp3|wav|ogg|m4a|aac)$/i.test(f)
       )
 
       if (soundFiles.length > 0) {
-        // Create sounds/<theme-key>/ directory
-        const destSoundsDir = join(SOUNDS_DIR, themeKey)
-        mkdirSync(destSoundsDir, { recursive: true })
-
         let copied = 0
         for (const sf of soundFiles) {
-          copyFileSync(join(soundsSubDir, sf), join(destSoundsDir, sf))
+          copyFileSync(join(soundsSubDir, sf), join(destThemeDir, sf))
           copied++
         }
-        ok(`Copied ${copied} sound files to sounds/${themeKey}/`)
-
-        // Rewrite YAML references to use the subdirectory
-        yamlContent = rewriteYamlSoundPaths(yamlContent, themeKey)
+        ok(`Copied ${copied} sound files`)
       }
     }
 
-    // Write the (possibly rewritten) theme YAML
+    // Copy the theme YAML (bare filenames are correct — sounds are siblings)
+    const destYaml = join(destThemeDir, `${themeKey}.yaml`)
     if (existsSync(destYaml)) {
       warn(`Overwriting existing theme: ${themeKey}`)
     }
-    writeFileSync(destYaml, yamlContent)
-    ok(`Installed theme YAML: themes/${yamlFile}`)
+    copyFileSync(srcYaml, destYaml)
+    ok(`Installed: ~/.ocsfx/themes/${themeKey}/`)
   }
 
   // --- Step 5: Clear theme cache ---
@@ -265,8 +194,8 @@ export async function installThemePack(source: string): Promise<void> {
 
   // --- Cleanup ---
   rmSync(extractDir, { recursive: true, force: true })
-  if (cleanupZip) {
-    try { unlinkSync(zipPath) } catch {}
+  if (cleanupArchive) {
+    try { unlinkSync(archivePath) } catch {}
   }
 
   console.log()

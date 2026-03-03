@@ -4,37 +4,17 @@ import { join, dirname } from "path"
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync } from "fs"
 import { execSync } from "child_process"
 import { fileURLToPath } from "url"
-import { loadThemes, getThemeNames, getTheme, reloadThemes, type SoundTheme } from "./lib/themes.js"
+import { loadThemes, getThemeNames, getTheme, reloadThemes, resolveSoundPath, type SoundTheme } from "./lib/themes.js"
 import { playSound as playSoundLib, isDebugMode, isTestMode } from "./lib/sound-player.js"
+import {
+  PLUGIN_DIR,
+  USER_THEMES_DIR,
+  BUNDLED_THEMES_DIR,
+} from "./lib/paths.js"
 
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
-
-// Plugin directory (where this file lives) — used for bundled sounds fallback
-const PLUGIN_DIR = dirname(fileURLToPath(import.meta.url))
-
-// Default sounds directory - can be overridden via OCSFX_SOUNDS_PATH env var
-const DEFAULT_SOUNDS_DIR = join(homedir(), "sounds/starcraft/mp3_trimmed")
-const SOUNDS_DIR = process.env.OCSFX_SOUNDS_PATH || DEFAULT_SOUNDS_DIR
-
-// Bundled sounds directory (ships with the plugin, e.g. the "default" theme)
-const BUNDLED_SOUNDS_DIR = join(PLUGIN_DIR, "sounds")
-
-/**
- * Resolve a sound filename to a full path.
- * Checks the user's SOUNDS_DIR first, then falls back to the plugin's
- * bundled sounds/ directory (for the default theme's built-in sounds).
- */
-function resolveSoundPath(soundFile: string): string | null {
-  const userPath = join(SOUNDS_DIR, soundFile)
-  if (existsSync(userPath)) return userPath
-
-  const bundledPath = join(BUNDLED_SOUNDS_DIR, soundFile)
-  if (existsSync(bundledPath)) return bundledPath
-
-  return null
-}
 
 // State directory for instance tracking and TTY profiles
 const STATE_DIR = join(homedir(), ".config/opencode/.opencode-sfx")
@@ -445,12 +425,21 @@ function cleanupStaleInstances(state: InstanceState): void {
   }
 }
 
+function hasUserThemes(): boolean {
+  try {
+    return existsSync(USER_THEMES_DIR) && readdirSync(USER_THEMES_DIR).length > 0
+  } catch {
+    return false
+  }
+}
+
 function getAvailableThemes(state: InstanceState): string[] {
   const usedThemes = new Set(Object.values(state.instances).map((i) => i.theme))
   const allThemes = getThemeNames()
-  // Exclude "test" and "default" from random rotation when the user has custom sounds
-  // (default is the fallback for users without custom sounds; test is for development)
-  const candidateThemes = existsSync(SOUNDS_DIR)
+  // Exclude "test" and "default" from random rotation when user has custom themes
+  // (default is the fallback for users without custom themes; test is for development)
+  const userHasThemes = hasUserThemes()
+  const candidateThemes = userHasThemes
     ? allThemes.filter((t) => t !== "test" && t !== "default")
     : allThemes.filter((t) => t !== "test")
   const available = candidateThemes.filter((t) => !usedThemes.has(t))
@@ -492,10 +481,10 @@ function determineProfile(): { profile: string; source: string } {
   cleanupStaleInstances(state)
   const availableThemes = getAvailableThemes(state)
 
-  // If the user's sounds directory doesn't exist, prefer the "default" theme
+  // If the user has no custom themes, prefer the "default" theme
   // (its bundled sounds ship with the plugin and work out of the box)
   let randomProfile: string
-  if (!existsSync(SOUNDS_DIR) && availableThemes.includes("default")) {
+  if (!hasUserThemes() && availableThemes.includes("default")) {
     randomProfile = "default"
   } else {
     randomProfile =
@@ -665,7 +654,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
     // Play announcement sound
     const announceFile = randomSound(currentTheme.sounds.announce)
     if (announceFile) {
-      const announcePath = resolveSoundPath(announceFile)
+      const announcePath = resolveSoundPath(currentTheme, announceFile)
       if (announcePath) {
         playSoundAlways(announcePath, "theme.switch", "theme changed")
       }
@@ -677,7 +666,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
   // Play the announcement sound on startup (always, regardless of focus)
   const announceFile = randomSound(currentTheme.sounds.announce)
   if (announceFile) {
-    const announcePath = resolveSoundPath(announceFile)
+    const announcePath = resolveSoundPath(currentTheme, announceFile)
     if (announcePath) {
       playSoundAlways(announcePath, "startup", "plugin initialized")
     }
@@ -815,7 +804,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           if (!soundFile) {
             return `Error: No announce sounds configured for theme ${currentThemeKey}`
           }
-          const soundPath = resolveSoundPath(soundFile)
+          const soundPath = resolveSoundPath(currentTheme, soundFile)
           if (soundPath) {
             playSoundAlways(soundPath, "test", "user requested test")
             return `Playing: ${soundFile} (theme: ${currentThemeKey})`
@@ -884,7 +873,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
           }
           
           // Validate sound files exist
-          const validateSound = (file: string) => resolveSoundPath(file) !== null
+          const validateSound = (file: string) => resolveSoundPath(currentTheme, file) !== null
           
           if (!validateSound(announceSound)) {
             return `Error: Announce sound not found: ${announceSound}`
@@ -918,9 +907,10 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             "",
           ].join("\n")
           
-          // Determine themes directory
-          const themesDir = join(PLUGIN_DIR, "themes")
-          const themeFile = join(themesDir, `${themeKey}.yaml`)
+          // Write to user themes directory (~/.ocsfx/themes/<key>/<key>.yaml)
+          const themeDir = join(USER_THEMES_DIR, themeKey)
+          mkdirSync(themeDir, { recursive: true })
+          const themeFile = join(themeDir, `${themeKey}.yaml`)
           
           // Write the theme file
           writeFileSync(themeFile, yamlContent)
@@ -941,13 +931,13 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       },
       
       sfx_list_sounds: {
-        description: "List available sound files in the sounds directory",
+        description: "List available sound files. Each theme is a self-contained directory with its own sounds.",
         parameters: {
           type: "object",
           properties: {
-            directory: {
+            theme: {
               type: "string",
-              description: "Directory to list sounds from. Defaults to configured SOUNDS_DIR.",
+              description: "Theme key to list sounds for. Defaults to current theme. Use '*' to list all themes.",
             },
             filter: {
               type: "string",
@@ -955,53 +945,40 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             },
           },
         },
-        execute: async ({ directory, filter }: { directory?: string; filter?: string }) => {
-          const soundsDir = directory || SOUNDS_DIR
+        execute: async ({ theme: themeKey, filter }: { theme?: string; filter?: string }) => {
           const lines: string[] = []
           let totalFiles = 0
-          
-          // List files from the user's sounds directory
-          if (existsSync(soundsDir)) {
-            let files = readdirSync(soundsDir)
-              .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
-              .sort()
-            
-            if (filter) {
-              const lowerFilter = filter.toLowerCase()
-              files = files.filter(f => f.toLowerCase().includes(lowerFilter))
-            }
-            
-            if (files.length > 0) {
-              lines.push(`Sound files in ${soundsDir}:`, "")
+          const lowerFilter = filter ? filter.toLowerCase() : null
+
+          const listThemeSounds = (key: string, t: SoundTheme) => {
+            if (!existsSync(t.basePath)) return
+            try {
+              let files = readdirSync(t.basePath)
+                .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
+                .sort()
+              if (lowerFilter) files = files.filter(f => f.toLowerCase().includes(lowerFilter))
+              if (files.length === 0) return
+
+              const marker = key === currentThemeKey ? " *" : ""
+              if (lines.length > 0) lines.push("")
+              lines.push(`${key}${marker} (${t.basePath}):`, "")
               files.forEach((f, i) => {
-                lines.push(`  ${(i + 1).toString().padStart(3)}. ${f}`)
+                lines.push(`  ${(totalFiles + i + 1).toString().padStart(3)}. ${f}`)
               })
               totalFiles += files.length
-            }
+            } catch { /* ignore */ }
           }
 
-          // Also list bundled sounds (if different from user dir)
-          if (existsSync(BUNDLED_SOUNDS_DIR) && BUNDLED_SOUNDS_DIR !== soundsDir) {
-            const bundledDirs = readdirSync(BUNDLED_SOUNDS_DIR, { withFileTypes: true })
-            for (const entry of bundledDirs) {
-              if (entry.isDirectory()) {
-                const subDir = join(BUNDLED_SOUNDS_DIR, entry.name)
-                let files = readdirSync(subDir)
-                  .filter(f => /\.(mp3|wav|ogg|m4a|aac)$/i.test(f))
-                  .sort()
-                if (filter) {
-                  const lowerFilter = filter.toLowerCase()
-                  files = files.filter(f => f.toLowerCase().includes(lowerFilter))
-                }
-                if (files.length > 0) {
-                  if (lines.length > 0) lines.push("")
-                  lines.push(`Bundled sounds (${entry.name}):`, "")
-                  files.forEach((f, i) => {
-                    lines.push(`  ${(totalFiles + i + 1).toString().padStart(3)}. ${entry.name}/${f}`)
-                  })
-                  totalFiles += files.length
-                }
-              }
+          if (themeKey && themeKey !== "*") {
+            const t = themes[themeKey]
+            if (!t) return `Error: Theme "${themeKey}" not found`
+            listThemeSounds(themeKey, t)
+          } else {
+            // List all themes (or just current)
+            const keys = themeKey === "*" ? Object.keys(themes).sort() : [currentThemeKey]
+            for (const k of keys) {
+              const t = themes[k]
+              if (t) listThemeSounds(k, t)
             }
           }
 
@@ -1040,7 +1017,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
             const dirPath = join(directory, filename)
             if (existsSync(dirPath)) soundPath = dirPath
           } else {
-            soundPath = resolveSoundPath(filename)
+            soundPath = resolveSoundPath(currentTheme, filename)
           }
           
           if (!soundPath) {
@@ -1091,7 +1068,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
       }
 
       if (soundFile) {
-        const soundPath = resolveSoundPath(soundFile)
+        const soundPath = resolveSoundPath(currentTheme, soundFile)
         if (soundPath) {
           playSound(soundPath, eventType)
         }
@@ -1111,7 +1088,7 @@ export const OpenCodeSFX: Plugin = async ({ $, client }) => {
         }
         const questionFile = randomSound(currentTheme.sounds.question)
         if (questionFile) {
-          const soundPath = resolveSoundPath(questionFile)
+          const soundPath = resolveSoundPath(currentTheme, questionFile)
           if (soundPath) {
             playSound(soundPath, "tool.question", "question tool invoked")
           }
