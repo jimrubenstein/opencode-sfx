@@ -2,23 +2,25 @@
  * Theme pack installer for OpenCode SFX.
  *
  * Installs a theme pack from a local archive or a URL.
- * Theme packs contain:
- *   - themes/<key>.yaml  — theme definition
- *   - sounds/*.mp3       — sound files
- *   - INSTALL.md         — (optional) install instructions
+ *
+ * Pack format (self-contained theme directory):
+ *   <name>/
+ *     <name>.yaml    — theme definition
+ *     *.mp3          — sound files (referenced by bare filenames in the YAML)
+ *     INSTALL.md     — (optional) install instructions
  *
  * The installer:
  *   1. Downloads the archive (if URL) or reads from local path
  *   2. Extracts to a temp directory
- *   3. Creates ~/.ocsfx/themes/<key>/ with the YAML and sounds together
- *   4. Clears the theme cache
+ *   3. Finds theme directories (containing a .yaml file)
+ *   4. Copies each theme directory to ~/.ocsfx/themes/<name>/
+ *   5. Clears the theme cache
  *
  * Usage: opencode-sfx install <url-or-path>
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, unlinkSync, rmSync } from "fs"
-import { join, dirname, basename, extname } from "path"
-import { fileURLToPath } from "url"
+import { existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, rmSync, statSync } from "fs"
+import { join, basename, extname } from "path"
 import { execSync } from "child_process"
 import { tmpdir } from "os"
 import {
@@ -79,6 +81,58 @@ function extractArchive(archivePath: string, destDir: string): void {
   }
 }
 
+/**
+ * Find theme directories in an extracted archive.
+ * A theme directory is any directory containing at least one .yaml file.
+ * Returns array of { key, srcDir } for each discovered theme.
+ */
+function findThemeDirs(extractDir: string): Array<{ key: string; srcDir: string }> {
+  const results: Array<{ key: string; srcDir: string }> = []
+
+  try {
+    const entries = readdirSync(extractDir, { withFileTypes: true })
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const dir = join(extractDir, entry.name)
+      const hasYaml = readdirSync(dir).some(f => f.endsWith(".yaml") || f.endsWith(".yml"))
+      if (hasYaml) {
+        results.push({ key: entry.name, srcDir: dir })
+      }
+    }
+  } catch { /* ignore */ }
+
+  return results
+}
+
+/**
+ * Copy all relevant files from a source theme directory to the destination.
+ * Copies .yaml, .yml, and audio files.
+ */
+function copyThemeFiles(srcDir: string, destDir: string): { yamlCount: number; soundCount: number } {
+  mkdirSync(destDir, { recursive: true })
+  let yamlCount = 0
+  let soundCount = 0
+
+  const files = readdirSync(srcDir)
+  for (const file of files) {
+    const srcPath = join(srcDir, file)
+    // Skip directories and non-files
+    if (!statSync(srcPath).isFile()) continue
+
+    const ext = extname(file).toLowerCase()
+    if (ext === ".yaml" || ext === ".yml") {
+      copyFileSync(srcPath, join(destDir, file))
+      yamlCount++
+    } else if (/^\.(mp3|wav|ogg|m4a|aac)$/.test(ext)) {
+      copyFileSync(srcPath, join(destDir, file))
+      soundCount++
+    }
+    // Skip INSTALL.md and other files
+  }
+
+  return { yamlCount, soundCount }
+}
+
 export async function installThemePack(source: string): Promise<void> {
   console.log()
   info("Installing theme pack")
@@ -123,63 +177,27 @@ export async function installThemePack(source: string): Promise<void> {
     process.exit(1)
   }
 
-  // --- Step 3: Find theme YAML ---
-  const themesSubDir = join(extractDir, "themes")
-  if (!existsSync(themesSubDir)) {
-    err("Invalid theme pack: no themes/ directory found in archive")
+  // --- Step 3: Find theme directories ---
+  const themeDirs = findThemeDirs(extractDir)
+
+  if (themeDirs.length === 0) {
+    err("Invalid theme pack: no theme directories found (expected <name>/<name>.yaml)")
     rmSync(extractDir, { recursive: true, force: true })
     if (cleanupArchive) try { unlinkSync(archivePath) } catch {}
     process.exit(1)
   }
 
-  const yamlFiles = readdirSync(themesSubDir).filter(f =>
-    f.endsWith(".yaml") || f.endsWith(".yml")
-  )
+  // --- Step 4: Install each theme to ~/.ocsfx/themes/<name>/ ---
+  for (const { key, srcDir } of themeDirs) {
+    const destDir = join(USER_THEMES_DIR, key)
 
-  if (yamlFiles.length === 0) {
-    err("Invalid theme pack: no .yaml files found in themes/ directory")
-    rmSync(extractDir, { recursive: true, force: true })
-    if (cleanupArchive) try { unlinkSync(archivePath) } catch {}
-    process.exit(1)
-  }
-
-  // --- Step 4: Install each theme into ~/.ocsfx/themes/<name>/ ---
-  const soundsSubDir = join(extractDir, "sounds")
-  const hasSounds = existsSync(soundsSubDir)
-
-  for (const yamlFile of yamlFiles) {
-    const themeKey = basename(yamlFile, extname(yamlFile))
-    const srcYaml = join(themesSubDir, yamlFile)
-
-    // Create self-contained theme directory
-    const destThemeDir = join(USER_THEMES_DIR, themeKey)
-    mkdirSync(destThemeDir, { recursive: true })
-
-    step(`Installing theme: ${themeKey}`)
-
-    // Copy sounds into the theme directory (alongside the YAML)
-    if (hasSounds) {
-      const soundFiles = readdirSync(soundsSubDir).filter(f =>
-        /\.(mp3|wav|ogg|m4a|aac)$/i.test(f)
-      )
-
-      if (soundFiles.length > 0) {
-        let copied = 0
-        for (const sf of soundFiles) {
-          copyFileSync(join(soundsSubDir, sf), join(destThemeDir, sf))
-          copied++
-        }
-        ok(`Copied ${copied} sound files`)
-      }
+    if (existsSync(destDir)) {
+      warn(`Overwriting existing theme: ${key}`)
     }
 
-    // Copy the theme YAML (bare filenames are correct — sounds are siblings)
-    const destYaml = join(destThemeDir, `${themeKey}.yaml`)
-    if (existsSync(destYaml)) {
-      warn(`Overwriting existing theme: ${themeKey}`)
-    }
-    copyFileSync(srcYaml, destYaml)
-    ok(`Installed: ~/.ocsfx/themes/${themeKey}/`)
+    step(`Installing theme: ${key}`)
+    const { yamlCount, soundCount } = copyThemeFiles(srcDir, destDir)
+    ok(`Installed: ~/.ocsfx/themes/${key}/ (${soundCount} sounds)`)
   }
 
   // --- Step 5: Clear theme cache ---

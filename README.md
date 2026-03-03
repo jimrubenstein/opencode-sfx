@@ -68,7 +68,7 @@ opencode-sfx install ~/Downloads/marine.tgz
 
 Browse available theme packs at [ocsfx-packs](https://github.com/jimrubenstein/ocsfx-packs).
 
-The installer extracts the theme YAML and sound files into the correct locations, then clears the theme cache. Run `/sfx reload` in your AI coding agent to pick up the new theme.
+The installer extracts the theme directory into `~/.ocsfx/themes/<name>/`, then clears the theme cache. Run `/sfx reload` in your AI coding agent to pick up the new theme.
 
 Multiple instances avoid picking the same theme. Use `/sfx change` to switch, or `/sfx change` with no argument to randomly pick a different one.
 
@@ -82,35 +82,45 @@ opencode-sfx create
 
 The wizard walks you through picking sounds for each event type (announce, question, idle, error), previews them inline, and writes the YAML file.
 
-**Or create a YAML file manually** in `themes/`:
+**Or create a YAML file manually.** Each theme is a self-contained directory:
+
+```
+~/.ocsfx/themes/mytheme/
+  mytheme.yaml
+  startup_sound.mp3
+  waiting_for_input.mp3
+  task_complete_1.mp3
+  task_complete_2.mp3
+  error_sound.mp3
+```
+
+The YAML uses bare filenames (resolved relative to the theme directory):
 
 ```yaml
 name: My Theme
 description: A custom sound theme
 
 sounds:
-  announce: mytheme/startup_sound.mp3
-  question: mytheme/waiting_for_input.mp3
+  announce: startup_sound.mp3
+  question: waiting_for_input.mp3
   idle:
-    - mytheme/task_complete_1.mp3
-    - mytheme/task_complete_2.mp3
+    - task_complete_1.mp3
+    - task_complete_2.mp3
   error:
-    - mytheme/error_sound.mp3
+    - error_sound.mp3
 ```
-
-Place the sound files in `sounds/mytheme/` inside the plugin directory.
 
 ### Theme Pack Format
 
 A theme pack is a `.tgz` or `.zip` archive with this structure:
 
 ```
-themes/<key>.yaml     Theme definition
-sounds/*.mp3          Sound files
-INSTALL.md            Install instructions (optional)
+<name>/
+  <name>.yaml     Theme definition (bare filenames)
+  *.mp3           Sound files
 ```
 
-The `opencode-sfx install` command handles downloading, extracting, placing sounds in `sounds/<theme-key>/`, rewriting the YAML references, and clearing the cache.
+The `opencode-sfx install` command handles downloading, extracting, copying the theme directory to `~/.ocsfx/themes/<name>/`, and clearing the cache.
 
 ## CLI
 
@@ -144,7 +154,6 @@ The `/sfx` command manages themes from inside OpenCode:
 | Variable | Description |
 |----------|-------------|
 | `OCSFX_THEME` | Force a specific theme |
-| `OCSFX_SOUNDS_PATH` | Custom path to sound files directory |
 | `OCSFX_ALERT` | Custom tmux alert prefix (default: `!! `) |
 
 ### Theme Selection Priority
@@ -152,7 +161,16 @@ The `/sfx` command manages themes from inside OpenCode:
 1. `OCSFX_THEME` environment variable
 2. `.ocsfx` file in current directory (just the theme name)
 3. TTY-to-profile mapping (persists per terminal session)
-4. Random selection (prefers `default` if no custom sounds found)
+4. Random selection (prefers `default` if no custom themes found)
+
+### Theme Directories
+
+Themes are discovered as self-contained directories:
+
+- **User themes** (first priority): `~/.ocsfx/themes/<name>/<name>.yaml`
+- **Bundled themes** (fallback): `<plugin>/themes/<name>/<name>.yaml`
+
+User themes with the same name override bundled themes.
 
 ### Manual Configuration
 
