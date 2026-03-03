@@ -4,12 +4,18 @@ node_modules/
 # Build cache
 .cache/
 
-# Sound files (user-provided, not included in repo - too large / copyright)
+# Sound files (user-provided or installed via theme packs, not distributed)
 # The sounds/default/ directory IS tracked (bundled synthetic notification tones)
 sounds/*
 !sounds/default/
 *.wav
 *.ogg
+
+# Theme packs installed locally (not distributed — install via opencode-sfx install)
+# Only default.yaml and test.yaml are tracked in the repo
+themes/*
+!themes/default.yaml
+!themes/test.yaml
 
 # Test sound fixtures (mock files, not real audio)
 test/sounds/
